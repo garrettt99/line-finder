@@ -600,6 +600,8 @@ div.ritem{cursor:default}
   .ev-intro .evi-acts{width:100%} .ev-intro .evi-acts .btn{flex:1}
   .ev-list li{grid-template-columns:minmax(0,1fr)}
 }
+
+@media (max-width:720px){ #open-settings .ib-l{display:inline} #open-settings{padding:0 10px} }
 </style>
 </head>
 <body>
@@ -624,7 +626,7 @@ div.ritem{cursor:default}
       <button id="pause" class="iconbtn" type="button" aria-pressed="false"></button>
       <button id="refresh" class="iconbtn" type="button"></button>
       <div class="seg" role="group" aria-label="Odds format"><button id="fmt-us" type="button" aria-pressed="true">American</button><button id="fmt-dec" type="button" aria-pressed="false">Decimal</button></div>
-      <button id="open-settings" class="iconbtn" type="button" aria-haspopup="dialog"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="ib-l">Model &amp; data</span></button>
+      <button id="open-settings" class="iconbtn" type="button" aria-haspopup="dialog"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="ib-l">Settings &amp; key</span></button>
       <button id="open-ev" class="iconbtn evq" type="button" aria-haspopup="dialog" aria-label="What is EV?"><span class="evmark" aria-hidden="true">EV?</span><span class="ib-l">What is EV?</span></button>
       <button id="open-about" class="iconbtn" type="button" aria-haspopup="dialog"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h0"/></svg><span class="ib-l">About</span></button>
     </div>
@@ -763,7 +765,7 @@ div.ritem{cursor:default}
     <section class="sec"><h3>What depends on the feed</h3>
       <ul class="excl" style="font-size:13px;color:var(--fg-2)">
         <li><b>Quote timestamps.</b> Ages come from the provider's own quote time. When the feed sends none, Line Finder shows "Quote age unknown" and doesn't rank the quote.</li>
-        <li><b>Settlement rules.</b> <span class="dep">Not supplied by The Odds API.</span> Live quotes stay "Settlement rules unverified" and out of cross-book EV until you record a verified rule (source and review date) under Model &amp; data.</li>
+        <li><b>Settlement rules.</b> <span class="dep">Not supplied by The Odds API.</span> Live quotes stay "Settlement rules unverified" and out of cross-book EV until you record a verified rule (source and review date) under Settings &amp; key.</li>
         <li><b>Sportsbook links.</b> <span class="dep">Only when the feed provides one.</span> A link is shown only if its address matches the sportsbook's known website.</li>
         <li><b>Exchange commission.</b> <span class="dep">Not supplied by any feed.</span> You set each exchange's rate. Until then, exchange quotes show raw prices and no net EV.</li>
         <li><b>Line history.</b> <span class="dep">Simulated in the demo.</span> Live history builds only from prices observed between fetches.</li>
@@ -796,7 +798,7 @@ startApp(new MyFeedAdapter());</pre></section>
 </aside>
 
 <aside id="settings" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1">
-  <div class="dp-head"><h2 id="settings-title">Model &amp; data source</h2><button class="iconbtn" type="button" data-close aria-label="Close settings">✕</button></div>
+  <div class="dp-head"><h2 id="settings-title">Settings &amp; key</h2><button class="iconbtn" type="button" data-close aria-label="Close settings">✕</button></div>
   <div class="dp-body">
     <section class="sec"><h3>Fair-odds model</h3>
       <div class="form">
