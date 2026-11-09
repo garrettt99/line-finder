@@ -828,6 +828,7 @@ startApp(new MyFeedAdapter());</pre></section>
     </section>
     <section class="sec"><h3>Settlement rules</h3>
       <p class="hint">Quotes are compared across books only when each book's rule for that league, market and period is stated by the feed or recorded here with a source and review date. Rules are never guessed from market names. <span class="dep">The Odds API doesn't state them.</span></p>
+      <label class="chk" style="padding-left:0;margin:4px 0 10px"><input type="checkbox" id="std-rules" checked> <span><b>Use standard overtime rules for live odds</b> (recommended). Football and basketball include OT, NHL moneylines and puck lines include OT and shootout, NHL totals count a shootout as 1 goal, soccer is 90 minutes plus stoppage. Labelled "assumed" in each wager. A rule you record for a specific book overrides it.</span></label>
       <div id="rules-list"></div>
       <details class="dd-inline"><summary class="linkbtn">Add a verified rule</summary>
         <div class="form" style="margin-top:10px">
@@ -958,6 +959,8 @@ const Core = (() => {
     if (q.settlement) return { rule: q.settlement, verified: true, source: 'Stated by the feed', reviewed: null };
     const r = rules && rules[ruleKey(q.book, league, q.type, q.period)];
     if (r && r.rule && r.source && r.reviewed) return { rule: r.rule, verified: true, source: r.source, reviewed: r.reviewed };
+    const sd = rules && rules[ruleKey('*', league, q.type, q.period)];
+    if (sd && sd.rule) return { rule: sd.rule, verified: true, standard: true, source: sd.source || 'Standard rule', reviewed: null };
     return { rule: null, verified: false, source: null, reviewed: null };
   }
   function groupMarkets(store, events, rules) {
@@ -1403,6 +1406,17 @@ const LIVE_SPORTS = {
   icehockey_nhl: { sport: 'Hockey', league: 'NHL' },
   soccer_epl: { sport: 'Soccer', league: 'EPL' }
 };
+/* Standard settlement rules used by the major sportsbooks for these full-game markets.
+   The Odds API doesn't state them, so they're applied as an assumption (labelled in the app)
+   unless you record a book-specific rule. Keys: *|league|type|period. */
+const STD_SRC = 'Standard rule at major sportsbooks (assumed, confirm at the book)';
+const STANDARD_RULES = (() => {
+  const r = {}, set = (lg, type, rule) => { r[['*', lg, type, 'Game'].join('|')] = { rule, source: STD_SRC }; };
+  for (const lg of ['NFL', 'NCAAF', 'NBA']) for (const t of ['ml', 'spread', 'total']) set(lg, t, 'Incl. OT');
+  set('NHL', 'ml', 'Incl. OT and shootout'); set('NHL', 'spread', 'Incl. OT and shootout'); set('NHL', 'total', 'Incl. OT, shootout counts as 1 goal');
+  for (const t of ['ml3', 'spread', 'total']) set('EPL', t, 'Full time, 90 min + stoppage');
+  return r;
+})();
 const REGIONS = { us: 'US', us2: 'US 2', uk: 'UK', eu: 'EU', au: 'AU' };
 const EXCHANGE_KEYS = new Set(['betfair_ex_uk', 'betfair_ex_eu', 'betfair_ex_au', 'matchbook', 'smarkets', 'betdaq', 'novig', 'prophetx', 'sporttrade', 'kalshi', 'polymarket']);
 /* Known sportsbook sites. A feed link counts as verified only if its host is one of these. */
@@ -1521,7 +1535,7 @@ const S = {
   m: { method: 'consensus', refBook: null, minRef: 2, staleMin: 15, pushEst: true },
   review: { ...Core.DEFAULT_REVIEW },
   ex: {}, userRules: {},
-  src: { mode: 'demo', regions: ['us', 'eu'], sports: ['americanfootball_nfl', 'basketball_nba', 'icehockey_nhl'], autoMin: 0, remember: true, minGapSec: 60 }
+  src: { mode: 'demo', regions: ['us', 'eu'], sports: ['americanfootball_nfl', 'basketball_nba', 'icehockey_nhl'], autoMin: 0, remember: true, minGapSec: 60, stdRules: true }
 };
 const SORTS = ['ev', 'start', 'best', 'offer', 'fairOdds', 'age', 'match', 'book'];
 const DESC_FIRST = ['ev', 'best', 'offer', 'fairOdds'];
@@ -1547,7 +1561,7 @@ function savePrefs() {
   store_set('lf-fmt', S.fmt);
   store_set(PREF_KEY, JSON.stringify({ sort: S.sort, m: S.m, review: S.review, ex: S.ex, src: S.src, books: S.f.books ? [...S.f.books] : S.f.booksPref }));
 }
-const allRules = () => ({ ...(adapter && adapter.rules || {}), ...S.userRules });
+const allRules = () => ({ ...(adapter && adapter.live && S.src.stdRules ? STANDARD_RULES : {}), ...(adapter && adapter.rules || {}), ...S.userRules });
 const feedExpired = () => !feed.lastOk || nowT() - feed.lastOk > S.m.staleMin * MIN;
 const exCfg = () => { const o = {}; for (const [k, v] of Object.entries(S.ex)) o[k] = { rate: v.rate === '' || v.rate == null ? null : +v.rate / 100, basis: v.basis || 'unknown' }; return o; };
 const cfg = () => ({ ...S.m, pushModel: S.m.pushEst ? Core.demoPushModel : null, review: S.review, feedExpired: feedExpired(), isExchange: id => !!(books[id] && books[id].exchange), exchanges: exCfg() });
@@ -2368,6 +2382,8 @@ function init() {
   }
   $('shared-note').hidden = !SHARED;
   $('k-remember').checked = S.src.remember;
+  $('std-rules').checked = S.src.stdRules;
+  $('std-rules').onchange = e => { S.src.stdRules = e.target.checked; savePrefs(); regroup(); render(); };
   $('src-regions').innerHTML = Object.entries(REGIONS).map(([k, l]) => `<label><input type="checkbox" value="${k}" ${S.src.regions.includes(k) ? 'checked' : ''}> ${l}</label>`).join('');
   $('src-sports').innerHTML = Object.entries(LIVE_SPORTS).map(([k, v]) => `<label><input type="checkbox" value="${k}" ${S.src.sports.includes(k) ? 'checked' : ''}> ${v.league}</label>`).join('');
   $('src-auto').value = String(S.src.autoMin);
