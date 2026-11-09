@@ -1863,7 +1863,7 @@ function rowHTML(r) {
   const bp = r.priceOffer, bpn = bookName(bp.book), feedOld = feed.fails > 0;
   const bestTag = r.nBooks > 1 ? (r.pickIsBest ? (r.outright ? '<span class="badge best">◆ Best price</span>' : `<span class="cell-sub">Tied best · ${r.offers.filter(o => o.d === bp.d && !o.flagged && !o.withheld).length} books</span>`) : '') : '<span class="cell-sub">Only 1 rankable book</span>';
   const splitTxt = r.split ? `Best price <b>${fmtOdds(bp.posted)}</b> at ${esc(bpn)} · EV ${bp.ev != null ? sgnPct(bp.ev) : 'n/a'}` : '';
-  const notes = [r.flaggedCount ? `⚑ ${r.flaggedCount} offer${r.flaggedCount === 1 ? '' : 's'} in Needs review` : '', r.withheldCount ? `${r.withheldCount} exchange quote${r.withheldCount === 1 ? '' : 's'} withheld` : ''].filter(Boolean).join(' · ');
+  const notes = [r.flaggedCount ? `⚑ ${r.flaggedCount} offer${r.flaggedCount === 1 ? '' : 's'} in Needs review` : ''].filter(Boolean).join(' · ');
   return `<tr class="row${S.sel === r.id ? ' sel' : ''}" tabindex="0" data-id="${esc(r.id)}" aria-selected="${S.sel === r.id}" aria-label="${esc(`${r.wager}, ${mk}, ${vs(e)}. Offer ${fmtOdds(r.posted)} at ${bk}, ${ageOf(r.q)}. ${r.evv != null ? 'Estimated EV ' + sgnPct(r.evv) : 'EV unavailable'}.`)}">
     <td class="c-wager"><div class="w-title"><span class="w-sel">${esc(r.wager)}</span><span class="w-mk">${esc(mk)}</span></div>
       <div class="w-meta"><span class="lg">${e.league}</span><span class="mu">${esc(vs(e))}</span><span>· ${startStr(e.start)}</span>${notes ? `<span class="rowflag">${notes}</span>` : ''}</div></td>
