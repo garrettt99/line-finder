@@ -568,6 +568,38 @@ div.ritem{cursor:default}
   #refresh .ib-l{display:inline}
   #refresh{padding:0 10px}
 }
+
+/* ===== EV explainer ===== */
+.evq .evmark{font-family:var(--f-mono);font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--mint);border:1px solid var(--mint-line);border-radius:5px;padding:0 4px;line-height:16px}
+.grid thead th .thx{display:flex;align-items:center;justify-content:flex-end}
+.grid thead th .thx button:last-child{width:auto;padding-left:6px}
+.grid thead th button.evinfo{width:18px;height:18px;padding:0;flex:none;justify-content:center;border:1px solid var(--line-3);border-radius:50%;font-size:10.5px;letter-spacing:0;color:var(--fg-2)}
+.grid thead th button.evinfo:hover{color:var(--mint);border-color:var(--mint-line)}
+.ev-intro{display:flex;gap:12px 16px;align-items:center;flex-wrap:wrap;margin:0 0 4px;padding:12px 14px;border:1px solid var(--mint-line);background:var(--mint-bg);border-radius:var(--r);font-size:13.5px;color:var(--fg-2)}
+.ev-intro b{color:var(--fg)}
+.ev-intro .evi-txt{flex:1 1 380px;min-width:0}
+.ev-intro .evi-acts{display:flex;gap:8px;flex:none}
+.ev-lead{margin:0;font-size:15.5px;line-height:1.5;color:var(--fg-2)}
+.ev-lead b{color:var(--fg)}
+.ev-ex{border:1px solid var(--line-2);border-radius:var(--r);padding:12px 14px;background:var(--bg);display:flex;flex-direction:column;gap:10px;font-size:13.5px;color:var(--fg-2)}
+.ev-ex p{margin:0}
+.ev-ex b{color:var(--fg)}
+.ev-ex .mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.ev-ex .pos{color:var(--mint)} .ev-ex .neg{color:var(--red)}
+.ev-math{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+.ev-math > div{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-top:1px solid var(--line)}
+.ev-math > div:first-child{border-top:0}
+.ev-math .tot{background:var(--mint-bg)}
+.ev-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;font-size:13.5px;color:var(--fg-2)}
+.ev-list li{display:grid;grid-template-columns:86px minmax(0,1fr);gap:10px;align-items:start}
+.ev-list b{color:var(--fg)}
+.ev-tag{justify-self:start;font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px;border:1px solid var(--line-3);color:var(--fg-2);white-space:nowrap}
+.ev-tag.pos{color:var(--mint);border-color:var(--mint-line);background:var(--mint-bg)}
+.ev-tag.warn{color:var(--amber);border-color:var(--amber-line);background:var(--amber-bg)}
+@media (max-width:720px){
+  .ev-intro .evi-acts{width:100%} .ev-intro .evi-acts .btn{flex:1}
+  .ev-list li{grid-template-columns:minmax(0,1fr)}
+}
 </style>
 </head>
 <body>
@@ -593,11 +625,17 @@ div.ritem{cursor:default}
       <button id="refresh" class="iconbtn" type="button"></button>
       <div class="seg" role="group" aria-label="Odds format"><button id="fmt-us" type="button" aria-pressed="true">American</button><button id="fmt-dec" type="button" aria-pressed="false">Decimal</button></div>
       <button id="open-settings" class="iconbtn" type="button" aria-haspopup="dialog"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="ib-l">Model &amp; data</span></button>
+      <button id="open-ev" class="iconbtn evq" type="button" aria-haspopup="dialog" aria-label="What is EV?"><span class="evmark" aria-hidden="true">EV?</span><span class="ib-l">What is EV?</span></button>
       <button id="open-about" class="iconbtn" type="button" aria-haspopup="dialog"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h0"/></svg><span class="ib-l">About</span></button>
     </div>
   </header>
 
   <div id="notice" aria-live="polite"></div>
+
+  <div id="ev-intro" class="ev-intro" hidden>
+    <div class="evi-txt"><b>New here? EV is the number to watch.</b> It estimates how much a bet wins or loses on average per $100, compared with what the other sportsbooks say is fair. Green means the price is better than fair.</div>
+    <div class="evi-acts"><button type="button" class="btn primary" data-ev-help>How EV works</button><button type="button" class="btn" id="ev-intro-x">Got it</button></div>
+  </div>
 
   <section class="filterbar" aria-label="Filters">
     <div id="filters" class="filters" aria-label="Filters">
@@ -644,7 +682,7 @@ div.ritem{cursor:default}
           <th scope="col" data-key="start"><button type="button" aria-label="Wager, sort by start time">Wager</button></th>
           <th scope="col" data-key="offer" class="r"><button type="button">Offer</button></th>
           <th scope="col" data-key="fairOdds" class="r"><button type="button">Fair odds</button></th>
-          <th scope="col" data-key="ev" class="r"><button type="button">Est. EV</button></th>
+          <th scope="col" data-key="ev" class="r"><div class="thx"><button type="button" class="evinfo" data-ev-help aria-label="What is EV?" title="What is EV?">?</button><button type="button">Est. EV</button></div></th>
           <th scope="col" data-key="best" class="r c-bestp"><button type="button">Best price</button></th>
         </tr></thead>
         <tbody id="rows"></tbody>
@@ -656,7 +694,7 @@ div.ritem{cursor:default}
   </section>
 
   <footer class="foot">
-    <div><b>Estimates, not guarantees.</b> Estimated EV is the long-run return per unit staked if the fair probability is right. Always confirm the price at the sportsbook before betting.</div>
+    <div><b>Estimates, not guarantees.</b> Estimated EV is the long-run return per unit staked if the fair probability is right. Always confirm the price at the sportsbook before betting. <button type="button" class="linkbtn" data-ev-help>What is EV?</button></div>
   </footer>
 </div>
 
@@ -679,6 +717,39 @@ div.ritem{cursor:default}
         <li><b>Rate limited</b>: the provider asked us to slow down. Line Finder waits for its retry instruction.</li>
         <li><b>Unavailable</b>: repeated or permanent failures. The last snapshot stays for inspection; quotes older than the stale cutoff drop out of rankings.</li>
       </ul></section>
+  </div>
+</aside>
+
+<aside id="evhelp" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="evhelp-title" tabindex="-1">
+  <div class="dp-head"><h2 id="evhelp-title">What is EV?</h2><button class="iconbtn" type="button" data-close aria-label="Close What is EV">✕</button></div>
+  <div class="dp-body">
+    <section class="sec">
+      <p class="ev-lead"><b>EV means expected value.</b> It's roughly how much you'd win or lose <b>on average per $100</b> if you made the same bet many times.</p>
+    </section>
+    <section class="sec"><h3>How Line Finder works it out</h3>
+      <ol class="steps">
+        <li><span><b>Find the real chance.</b> It looks at the same bet at the other sportsbooks and removes their built-in cut (the "vig"). What's left is a fair estimate of how often the bet wins. The book being rated is left out, so it never grades its own price.</span></li>
+        <li><span><b>Compare it to the price on offer.</b> If a book pays more than that fair chance deserves, the bet has positive EV.</span></li>
+      </ol></section>
+    <section class="sec"><h3>Example</h3>
+      <div class="ev-ex">
+        <p>The other books, with their cut removed, say a team wins about <b>50%</b> of the time. A fair price is <b class="mono">+100</b>. One book is offering <b class="mono">+110</b>.</p>
+        <div class="ev-math">
+          <div><span>Half the time you win</span><b class="mono pos">+$110</b></div>
+          <div><span>Half the time you lose</span><b class="mono neg">−$100</b></div>
+          <div class="tot"><span>Average per $100 bet</span><b class="mono pos">+$5 → +5.0% EV</b></div>
+        </div>
+        <p>If that book only offered <b class="mono">−110</b>, the average would be about <b class="mono neg">−$4.50</b>, a negative EV bet.</p>
+      </div></section>
+    <section class="sec"><h3>Reading the board</h3>
+      <ul class="ev-list">
+        <li><span class="ev-tag pos">+EV</span><span><b>Positive EV.</b> The price beats the market's fair estimate. Worth a closer look.</span></li>
+        <li><span class="ev-tag">Fair odds</span><span><b>Fair odds.</b> What the price would be with no cut taken. Better than this is +EV.</span></li>
+        <li><span class="ev-tag">Best price</span><span><b>Best price.</b> The best number any book has. It isn't automatically +EV, because sometimes every book is bad.</span></li>
+        <li><span class="ev-tag warn">Review</span><span><b>Needs review.</b> The EV looks too good to be true, often a stale or mistaken price. Check before betting.</span></li>
+        <li><span class="ev-tag">Your price</span><span><b>Price you see at.</b> If the book's price has moved, type it into the wager's detail panel and EV recalculates. A small move can flip a bet from positive to negative.</span></li>
+      </ul></section>
+    <section class="sec"><div class="callout warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h0"/></svg><span><b>EV is an average over many bets, not a promise.</b> A +3% bet still loses often. It's an estimate built from what the other books think, so it shows where the value probably is, not a sure thing.</span></div></section>
   </div>
 </aside>
 
@@ -1631,7 +1702,7 @@ function syncControls() {
   sd.textContent = numeric ? (S.sort.dir < 0 ? '↓ High first' : '↑ Low first') : (S.sort.dir < 0 ? '↓ Descending' : '↑ Ascending');
   sd.setAttribute('aria-label', `Sort direction: ${S.sort.dir < 0 ? 'descending' : 'ascending'}. Activate to reverse.`);
   document.querySelectorAll('#grid thead th[data-key]').forEach(th => {
-    const on = th.dataset.key === S.sort.key, b = th.querySelector('button'), base = b.dataset.base || (b.dataset.base = b.textContent);
+    const on = th.dataset.key === S.sort.key, b = th.querySelector('button:not(.evinfo)'), base = b.dataset.base || (b.dataset.base = b.textContent);
     if (on) th.setAttribute('aria-sort', S.sort.dir < 0 ? 'descending' : 'ascending'); else th.removeAttribute('aria-sort');
     const arrow = `<span class="sarrow" aria-hidden="true">${on ? (S.sort.dir < 0 ? '▼' : '▲') : ''}</span>`;
     b.innerHTML = th.classList.contains('r') ? arrow + esc(base) : esc(base) + arrow;
@@ -2304,6 +2375,10 @@ function init() {
   $('diag-retry').onclick = () => { feed.blockUntil = feed.blockUntil && feed.blockUntil > Date.now() ? feed.blockUntil : null; refreshNow(true); renderDiag(); };
   $('open-settings').onclick = e => showDialog('settings', e.currentTarget);
   $('open-about').onclick = e => showDialog('about', e.currentTarget);
+  $('open-ev').onclick = e => showDialog('evhelp', e.currentTarget);
+  document.querySelectorAll('[data-ev-help]').forEach(b => b.onclick = e => { e.stopPropagation(); showDialog('evhelp', e.currentTarget); });
+  if (!store_get('lf-ev-seen')) $('ev-intro').hidden = false;
+  $('ev-intro-x').onclick = () => { $('ev-intro').hidden = true; store_set('lf-ev-seen', '1'); };
   $('fmt-us').onclick = () => setFmt('us'); $('fmt-dec').onclick = () => setFmt('dec');
   $('open-filters').onclick = e => showDialog('filters', e.currentTarget);
   $('sheet-reset').onclick = () => resetFilters();
@@ -2334,10 +2409,10 @@ function init() {
   // sorting
   $('sort-key').onchange = e => { const k = e.target.value; setSort(k, DESC_FIRST.includes(k) ? -1 : 1); };
   $('sort-dir').onclick = () => setSort(S.sort.key, -S.sort.dir);
-  document.querySelectorAll('#grid thead th[data-key] button').forEach(b => b.onclick = () => {
-    const k = b.parentElement.dataset.key;
+  document.querySelectorAll('#grid thead th[data-key] button:not(.evinfo)').forEach(b => b.onclick = () => {
+    const k = b.closest('th').dataset.key;
     setSort(k, S.sort.key === k ? -S.sort.dir : (DESC_FIRST.includes(k) ? -1 : 1));
-    const nb = document.querySelector(`#grid thead th[data-key="${k}"] button`); if (nb) nb.focus();
+    const nb = document.querySelector(`#grid thead th[data-key="${k}"] button:not(.evinfo)`); if (nb) nb.focus();
   });
   // board rows
   const tb = $('rows');
@@ -2350,7 +2425,7 @@ function init() {
   };
   // dialogs
   $('scrim').onclick = () => hideDialog();
-  document.querySelectorAll('#settings [data-close], #about [data-close], #filters [data-close], #diag [data-close]').forEach(b => b.onclick = () => hideDialog());
+  document.querySelectorAll('#settings [data-close], #about [data-close], #evhelp [data-close], #filters [data-close], #diag [data-close]').forEach(b => b.onclick = () => hideDialog());
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       const dd = document.querySelector('details.dd[open]');
