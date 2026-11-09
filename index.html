@@ -602,6 +602,33 @@ div.ritem{cursor:default}
 }
 
 @media (max-width:720px){ #open-settings .ib-l{display:inline} #open-settings{padding:0 10px} }
+
+/* ===== Results ===== */
+.res{padding:12px 16px 16px;display:flex;flex-direction:column;gap:14px}
+.res-top{display:flex;gap:10px 16px;align-items:center;flex-wrap:wrap}
+.rgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.rcard{border:1px solid var(--line-2);border-radius:var(--r);background:var(--bg);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.rcard .lab{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--fg-3)}
+.rcard .v{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:20px;font-weight:700;color:var(--fg)}
+.rcard .sub{font-size:12px;color:var(--fg-3)}
+.rcard.pos .v{color:var(--mint)} .rcard.neg .v{color:var(--red)}
+.res td.pos{color:var(--mint)} .res td.neg{color:var(--red)}
+.res .tbl td.r,.res .tbl td{font-variant-numeric:tabular-nums}
+.rsec{display:flex;flex-direction:column;gap:8px}
+.rsec h3{margin:0;font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-2)}
+.badge.rw{color:var(--mint);border:1px solid var(--mint-line);background:var(--mint-bg)}
+.badge.rl{color:var(--red);border:1px solid var(--red-line);background:var(--red-bg)}
+@media (max-width:1100px){.rgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:720px){
+  .res{padding:4px 0 8px}
+  .rgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rgrid .rcard:last-child{grid-column:1/-1}
+  .res-top .keyrow{width:100%} .res-top .keyrow .btn{flex:1}
+  .tabs button .tcount{display:none}
+  #tab-review .tcount.has{display:inline}
+}
+
+.vh{display:none!important}
 </style>
 </head>
 <body>
@@ -668,6 +695,7 @@ div.ritem{cursor:default}
         <button type="button" role="tab" id="tab-board" data-view="board" aria-selected="true" aria-controls="view-board">Board <span class="tcount" id="tc-board"></span></button>
         <button type="button" role="tab" id="tab-review" data-view="review" aria-selected="false" aria-controls="view-review">Needs review <span class="tcount" id="tc-review"></span></button>
         <button type="button" role="tab" id="tab-snapshot" data-view="snapshot" aria-selected="false" aria-controls="view-snapshot">Snapshot <span class="tcount" id="tc-snapshot"></span></button>
+        <button type="button" role="tab" id="tab-results" data-view="results" aria-selected="false" aria-controls="view-results">Results <span class="tcount" id="tc-results"></span></button>
       </div>
       <span class="matchcount" id="matchcount" aria-live="polite"></span>
       <button id="open-filters" class="btn fb-btn" type="button" aria-haspopup="dialog"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h18M6 12h12M10 19h4"/></svg>Filters<span id="fcount" class="num"></span></button>
@@ -692,6 +720,7 @@ div.ritem{cursor:default}
     </div>
     <div id="view-review" role="tabpanel" aria-labelledby="tab-review" hidden></div>
     <div id="view-snapshot" role="tabpanel" aria-labelledby="tab-snapshot" hidden></div>
+    <div id="view-results" role="tabpanel" aria-labelledby="tab-results" hidden></div>
     <div class="board-foot" id="board-foot"></div>
   </section>
 
@@ -1143,7 +1172,36 @@ const Core = (() => {
     }
     return null;
   }
-  return { MIN, HOUR, DEFAULT_REVIEW, a2d, d2a, roundA, sum, median, validate, baseKey, quoteKey, ruleKey, createStore, ingest, resolveSettlement, groupMarkets, quoteState, isComplete, isPushable, evFromProbs, effective, postedForEffective, outliers, fair, evaluate, evAtPrice, minOddsFor, analyze, buildRows, sortRows, verifiedLink, demoPushModel };
+  /* ---------- results tracking ----------
+     pick: { type, sel (outcome id), selLine (outcome line, spreads), line (totals), away, home, d (decimal price taken) }
+     game: { completed, scores: [{ name, score }] } from the feed's scores endpoint.
+     Returns { result: 'win'|'loss'|'push'|'pending'|'no-score', units, final } at a 1-unit stake. */
+  function gradePick(p, game) {
+    if (!game || !game.completed) return { result: 'pending', units: null, final: null };
+    const sc = {}; (game.scores || []).forEach(x => { sc[x.name] = Number(x.score); });
+    const a = sc[p.away], h = sc[p.home];
+    if (!Number.isFinite(a) || !Number.isFinite(h)) return { result: 'no-score', units: null, final: null };
+    const final = `${p.away} ${a}, ${p.home} ${h}`;
+    let m;
+    if (p.type === 'total') { const t = a + h; m = p.sel === 'over' ? t - p.line : p.line - t; }
+    else if (p.type === 'spread') { const mine = p.sel === p.home ? h : a, opp = p.sel === p.home ? a : h; m = mine + p.selLine - opp; }
+    else if (p.type === 'ml3') m = p.sel === 'draw' ? (a === h ? 1 : -1) : (a === h ? -1 : (p.sel === p.home ? h - a : a - h));
+    else m = p.sel === p.home ? h - a : a - h;
+    if (Math.abs(m) < 1e-9) return { result: 'push', units: 0, final };
+    return m > 0 ? { result: 'win', units: p.d - 1, final } : { result: 'loss', units: -1, final };
+  }
+  /* Summary over graded picks. Expected units = sum of EV/100 at the time each pick was found. */
+  function summarize(picks) {
+    const g = picks.filter(p => ['win', 'loss', 'push'].includes(p.result));
+    const W = g.filter(p => p.result === 'win').length, L = g.filter(p => p.result === 'loss').length, P = g.length - W - L;
+    const units = sum(g.map(p => p.units)), exp = sum(g.map(p => p.ev / 100));
+    const dec = g.filter(p => p.result !== 'push'), expWins = sum(dec.map(p => p.Pw / (p.Pw + p.Pl)));
+    const clv = picks.filter(p => p.clv != null && p.start <= (p.closeAt || 0) + 6 * HOUR);
+    return { n: g.length, W, L, P, units, exp, roi: g.length ? units / g.length * 100 : null, expRoi: g.length ? exp / g.length * 100 : null,
+      winRate: dec.length ? W / dec.length : null, expWinRate: dec.length ? expWins / dec.length : null,
+      clvN: clv.length, clvBeat: clv.length ? clv.filter(p => p.clv > 0).length / clv.length : null, clvAvg: clv.length ? sum(clv.map(p => p.clv)) / clv.length : null };
+  }
+  return { MIN, HOUR, DEFAULT_REVIEW, gradePick, summarize, a2d, d2a, roundA, sum, median, validate, baseKey, quoteKey, ruleKey, createStore, ingest, resolveSettlement, groupMarkets, quoteState, isComplete, isPushable, evFromProbs, effective, postedForEffective, outliers, fair, evaluate, evAtPrice, minOddsFor, analyze, buildRows, sortRows, verifiedLink, demoPushModel };
 })();
 
 /* ===== Deterministic checks (fixtures, fixed clock). ===== */
@@ -1248,6 +1306,20 @@ function runChecks(C) {
     const r = rowsOf(load([ml('W', 'f1', [107, -116]), ml('X', 'f1', [111, -119]), ml('Y', 'f1', [117, -145]), ml('Z', 'f1', [118, -121])])).rows.find(x => x.i === 0);
     const atFeed = r.evv, mine = C.evAtPrice(r.r, C.a2d(110), r.book, cfg), minD = C.minOddsFor(r.r, 0, r.book, cfg);
     return { pass: atFeed > 0 && mine.ev < 0 && C.a2d(117) >= minD && C.a2d(110) < minD, detail: `feed ${r.book} +117 → ${atFeed.toFixed(2)}%; entered +110 → ${mine.ev.toFixed(2)}%; break-even ${C.d2a(minD).toFixed(1)}` };
+  });
+  check('Finished games are graded correctly (moneyline, spread, total, push)', () => {
+    const game = { completed: true, scores: [{ name: 'Away', score: '24' }, { name: 'Home', score: '20' }] };
+    const base = { away: 'Away', home: 'Home', d: 2.1 };
+    const ml = C.gradePick({ ...base, type: 'ml', sel: 'Away' }, game), sp = C.gradePick({ ...base, type: 'spread', sel: 'Home', selLine: 4.5 }, game),
+      sp2 = C.gradePick({ ...base, type: 'spread', sel: 'Away', selLine: -4 }, game), tot = C.gradePick({ ...base, type: 'total', sel: 'under', line: 44.5 }, game),
+      pend = C.gradePick({ ...base, type: 'ml', sel: 'Away' }, { completed: false });
+    const pass = ml.result === 'win' && Math.abs(ml.units - 1.1) < 1e-9 && sp.result === 'win' && sp2.result === 'push' && sp2.units === 0 && tot.result === 'win' && pend.result === 'pending';
+    return { pass, detail: `Away 24–20: Away ML ${ml.result} (+${ml.units.toFixed(2)}u), Home +4.5 ${sp.result}, Away −4 ${sp2.result}, Under 44.5 ${tot.result}, unfinished ${pend.result}` };
+  });
+  check('Track record compares real profit with the profit the estimates predicted', () => {
+    const ps = [{ result: 'win', units: 1.2, ev: 4, Pw: .48, Pl: .52 }, { result: 'loss', units: -1, ev: 3, Pw: .5, Pl: .5 }, { result: 'push', units: 0, ev: 2, Pw: .45, Pl: .45 }, { result: 'pending', units: null, ev: 5 }];
+    const s = C.summarize(ps);
+    return { pass: s.n === 3 && s.W === 1 && s.L === 1 && s.P === 1 && Math.abs(s.units - .2) < 1e-9 && Math.abs(s.exp - .09) < 1e-9, detail: `record ${s.W}-${s.L}-${s.P}, profit ${s.units.toFixed(2)}u vs expected ${s.exp.toFixed(2)}u` };
   });
   return out;
 }
@@ -1466,9 +1538,20 @@ class OddsApiAdapter {
     }
     return { books: Object.values(books), events: Object.values(events), offers, rejected, errors, okScopes, fetchedAt: now };
   }
+  /* Final scores for games in the last 3 days (2 credits per sport). Returns { [eventId]: { completed, scores } }. */
+  async scores(sk) {
+    const url = `https://api.the-odds-api.com/v4/sports/${sk}/scores/?apiKey=${encodeURIComponent(this.key)}&daysFrom=3&dateFormat=iso`;
+    const res = await fetch(url, { cache: 'no-store' });
+    const rem = res.headers.get('x-requests-remaining'), used = res.headers.get('x-requests-used');
+    if (rem != null) this.quota = { remaining: +rem, used: used != null ? +used : null, at: Date.now() };
+    if (!res.ok) { let msg = ''; try { msg = (await res.json()).message || ''; } catch (e) { } throw new Error(`HTTP ${res.status}${msg ? ' (' + msg + ')' : ''}`); }
+    const data = await res.json(), out = {};
+    if (Array.isArray(data)) for (const g of data) if (g && g.id) out[g.id] = { completed: !!g.completed, scores: Array.isArray(g.scores) ? g.scores : [], home: g.home_team, away: g.away_team };
+    return out;
+  }
   _mapEvent(ev, info, sk, rg, events, books, offers, rejected) {
     if (!ev || !ev.id || !ev.home_team || !ev.away_team || !ev.commence_time || !Number.isFinite(Date.parse(ev.commence_time))) { rejected.push({ why: 'event missing teams or start time', raw: ev }); return; }
-    events[ev.id] = { id: ev.id, sport: info.sport, league: info.league, away: ev.away_team, home: ev.home_team, awayId: ev.away_team, homeId: ev.home_team,
+    events[ev.id] = { id: ev.id, sk, sport: info.sport, league: info.league, away: ev.away_team, home: ev.home_team, awayId: ev.away_team, homeId: ev.home_team,
       as: shortName(ev.away_team, info.league), hs: shortName(ev.home_team, info.league), start: Date.parse(ev.commence_time) };
     for (const b of ev.bookmakers || []) {
       if (!b || !b.key) continue;
@@ -1735,8 +1818,9 @@ function syncControls() {
     const arrow = `<span class="sarrow" aria-hidden="true">${on ? (S.sort.dir < 0 ? '▼' : '▲') : ''}</span>`;
     b.innerHTML = th.classList.contains('r') ? arrow + esc(base) : esc(base) + arrow;
   });
-  ['board', 'review', 'snapshot'].forEach(v => { $('tab-' + v).setAttribute('aria-selected', S.view === v); $('view-' + v).hidden = S.view !== v; });
+  ['board', 'review', 'snapshot', 'results'].forEach(v => { $('tab-' + v).setAttribute('aria-selected', S.view === v); $('view-' + v).hidden = S.view !== v; });
   $('sortbox').hidden = S.view !== 'board';
+  const rv = S.view === 'results'; ['matchcount', 'board-cap', 'open-filters', 'board-foot'].forEach(id => { const x = $(id); if (x) x.classList.toggle('vh', rv); });
 }
 function buildBooks() {
   const ids = Object.keys(books).sort((a, b) => bookName(a).localeCompare(bookName(b)));
@@ -1918,6 +2002,115 @@ function wireActs(root) {
 }
 function setView(v) { S.view = v; render(); const t = $('tab-' + v); if (t) t.focus(); }
 
+/* ---------- results tracking (live odds only, stored on this device) ---------- */
+const PICKS_KEY = 'lf-picks', PICKS_MAX = 1500, SCORE_GAP = 20 * 60000, DAY = 86400000;
+let picks = []; const lastScores = {}; let resMsg = '', resBusy = false;
+try { const p = JSON.parse(store_get(PICKS_KEY) || '[]'); if (Array.isArray(p)) picks = p; } catch (e) { }
+const savePicks = () => { if (picks.length > PICKS_MAX) picks = picks.slice(-PICKS_MAX); store_set(PICKS_KEY, JSON.stringify(picks)); };
+const pickKey = (m, i) => [m.eventId, m.type, m.period, m.line == null ? '-' : m.line, i].join('|');
+const isFinal = p => ['win', 'loss', 'push', 'no-score'].includes(p.result);
+function trackPicks() {
+  if (!isLive()) return;
+  const now = Date.now();
+  const res = Core.analyze(markets, events, cfg(), { ...S.f, sport: 'all', league: 'all', market: 'all', starts: 'all', minEv: '', books: null, maxAgeMin: maxAgeMin() }, now);
+  const byKey = new Map(res.rows.map(r => [pickKey(r.m, r.i), r])), have = new Map(picks.map(p => [p.k, p]));
+  for (const p of picks) {
+    if (isFinal(p) || p.start <= now) continue;
+    const r = byKey.get(p.k); if (!r) continue;
+    const o = r.offers.find(x => x.book === p.book), rr = o && o.r && o.r.status === 'ok' ? o.r : (r.r && r.r.status === 'ok' ? r.r : null);
+    if (rr && rr.Pw != null) { p.closePw = rr.Pw; p.closePl = rr.Pl; p.closeAt = now; p.clv = (rr.Pw * (p.d - 1) - rr.Pl) * 100; }
+  }
+  let added = 0;
+  for (const r of res.rows) {
+    if (r.evv == null || !(r.evv > 0) || !r.evOffer || r.start <= now) continue;
+    const k = pickKey(r.m, r.i); if (have.has(k)) continue;
+    const e = events[r.m.eventId], q = r.evOffer.q, oc = q.outcomes[r.i], ro = r.evOffer.r;
+    picks.push({ k, eventId: e.id, sk: e.sk, league: e.league, sport: e.sport, away: e.away, home: e.home, as: e.as, hs: e.hs, start: e.start,
+      type: r.m.type, line: r.m.line, sel: oc.id, selLine: oc.line, label: r.wager, settle: r.m.settlement, book: r.evOffer.book, bookName: bookName(r.evOffer.book),
+      d: r.evOffer.d, posted: r.evOffer.posted, ev: r.evv, Pw: ro.Pw, Pl: ro.Pl, found: now, closePw: ro.Pw, closePl: ro.Pl, closeAt: now, clv: r.evv, result: 'pending', units: null, final: null });
+    added++;
+  }
+  savePicks();
+  checkResults(false);
+}
+async function checkResults(manual) {
+  if (!isLive() || typeof adapter.scores !== 'function' || resBusy) return;
+  const now = Date.now();
+  for (const p of picks) if (!isFinal(p) && now - p.start > 3.5 * DAY) { p.result = 'no-score'; p.units = null; }
+  const due = picks.filter(p => !isFinal(p) && p.start < now - 2 * Core.HOUR);
+  const sks = [...new Set(due.map(p => p.sk).filter(Boolean))].filter(sk => manual || !lastScores[sk] || now - lastScores[sk] > SCORE_GAP);
+  if (!sks.length) { if (manual) { resMsg = due.length ? 'Checked recently. Try again in a few minutes.' : 'No finished games waiting for a score.'; render(); } savePicks(); return; }
+  resBusy = true; resMsg = 'Checking final scores…'; render();
+  let graded = 0, fail = '';
+  for (const sk of sks) {
+    try {
+      const games = await adapter.scores(sk); lastScores[sk] = Date.now();
+      for (const p of due) if (p.sk === sk && games[p.eventId]) { const g = Core.gradePick(p, games[p.eventId]); if (g.result !== 'pending') { Object.assign(p, g, { gradedAt: Date.now() }); graded++; } }
+    } catch (e) { fail = e.message || 'request failed'; }
+  }
+  resBusy = false; savePicks();
+  resMsg = fail ? `Couldn't get scores: ${fail}` : graded ? `Graded ${graded} bet${graded === 1 ? '' : 's'}.` : 'No new final scores yet. Games usually show up an hour or two after they end.';
+  render();
+}
+const unitsStr = u => u == null ? '—' : (u > 0 ? '+' : u < 0 ? '−' : '') + Math.abs(u).toFixed(2) + 'u';
+const pctS = x => x == null ? '—' : (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(1) + '%';
+function renderResults() {
+  const el = $('view-results'), now = Date.now();
+  const graded = picks.filter(p => ['win', 'loss', 'push'].includes(p.result));
+  $('tc-results').textContent = graded.length || (picks.length ? picks.length : '');
+  if (S.view !== 'results') return;
+  let h;
+  if (!picks.length) {
+    h = `<div class="state" style="margin:24px auto"><span class="st-ic">${I.key || ''}</span><h3>No bets tracked yet</h3>
+      <p>${isLive() ? 'Every time live odds load, each wager with positive EV is saved here with its price. After the game ends, Line Finder checks the final score and grades it, so you can see whether the picks actually win the way the estimates say.' : 'Results are tracked on live odds only. The simulated feed has no real games to grade.'}</p>
+      ${isLive() ? '' : '<p><button type="button" class="btn primary" data-act="settings">Switch to live odds</button></p>'}</div>`;
+  } else {
+    const s = Core.summarize(picks), pend = picks.filter(p => !isFinal(p));
+    const card = (lab, v, sub, cls = '') => `<div class="rcard ${cls}"><span class="lab">${lab}</span><span class="v">${v}</span>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
+    const tone = x => x == null ? '' : x > 0 ? 'pos' : x < 0 ? 'neg' : '';
+    const verdict = s.n === 0 ? 'No finished games yet. Bets are graded once the final score is in.'
+      : s.n < 100 ? `<b>Too early to judge.</b> ${s.n} graded bet${s.n === 1 ? '' : 's'} is mostly luck either way. Profit only settles toward the estimate after a few hundred bets. Beating the closing line is the faster sign the edge is real.`
+      : s.units >= s.exp * 0.5 ? '<b>Tracking the estimates.</b> Real profit is in line with what the EV numbers predicted.' : '<b>Running below the estimates.</b> Real profit is behind what the EV numbers predicted. Keep watching the closing-line number.';
+    const buckets = [[0, 2, 'Under 2% EV'], [2, 5, '2% to 5% EV'], [5, Infinity, '5% EV and up']].map(([lo, hi, lab]) => {
+      const b = Core.summarize(picks.filter(p => p.ev >= lo && p.ev < hi));
+      return `<tr><td>${lab}</td><td class="r">${b.n}</td><td class="r">${b.n ? `${b.W}-${b.L}-${b.P}` : '—'}</td><td class="r ${tone(b.roi)}">${pctS(b.roi)}</td><td class="r">${pctS(b.expRoi)}</td></tr>`;
+    }).join('');
+    const res = p => p.result === 'win' ? '<span class="badge rw">Won</span>' : p.result === 'loss' ? '<span class="badge rl">Lost</span>' : p.result === 'push' ? '<span class="badge ok">Push</span>'
+      : p.result === 'no-score' ? '<span class="badge ok">No score</span>' : p.start > now ? '<span class="badge ok">Upcoming</span>' : '<span class="badge warn">Awaiting score</span>';
+    const list = picks.slice().sort((a, b) => b.start - a.start).slice(0, 300).map(p => `<tr>
+      <td><b style="font-weight:600">${esc(p.label)}</b><span class="s">${esc(p.league)} · ${esc(p.as)} ${p.sport === 'Soccer' ? 'at' : '@'} ${esc(p.hs)} · ${startStr(p.start)}</span></td>
+      <td>${esc(p.bookName || p.book)}<span class="s">${fmtOdds(p.posted)}</span></td>
+      <td class="r ${tone(p.ev)}">${pctS(p.ev)}</td>
+      <td class="r ${tone(p.clv)}">${p.clv == null ? '—' : pctS(p.clv)}</td>
+      <td>${res(p)}${p.final ? `<span class="s">${esc(p.final)}</span>` : ''}</td>
+      <td class="r ${tone(p.units)}">${unitsStr(p.units)}</td></tr>`).join('');
+    h = `<div class="res">
+      <div class="res-top"><p class="snapnote" style="border:0;padding:0;margin:0;flex:1">Every positive-EV wager Line Finder found on live odds, graded against the final score at 1 unit per bet. Saved on this device only.</p>
+        <div class="keyrow"><button type="button" class="btn primary" id="res-check" ${resBusy ? 'disabled' : ''}>Check results now</button><button type="button" class="btn ghost" id="res-clear">Clear history</button></div></div>
+      ${resMsg ? `<p class="hint" role="status" style="margin:0">${esc(resMsg)}</p>` : ''}
+      <div class="rgrid">
+        ${card('Record', s.n ? `${s.W}-${s.L}${s.P ? '-' + s.P : ''}` : '—', `${s.n} graded · ${pend.length} pending`)}
+        ${card('Profit', unitsStr(s.n ? s.units : null), s.n ? `ROI ${pctS(s.roi)}` : 'at 1 unit per bet', tone(s.n ? s.units : null))}
+        ${card('Expected profit', unitsStr(s.n ? s.exp : null), s.n ? `ROI ${pctS(s.expRoi)} from the EV estimates` : 'what the EV numbers predicted')}
+        ${card('Win rate', s.winRate == null ? '—' : (s.winRate * 100).toFixed(1) + '%', s.expWinRate == null ? 'pushes excluded' : `expected ${(s.expWinRate * 100).toFixed(1)}%`)}
+        ${card('Beat the closing line', s.clvBeat == null ? '—' : Math.round(s.clvBeat * 100) + '%', s.clvAvg == null ? '' : `avg ${pctS(s.clvAvg)} EV at the last price before start`, tone(s.clvAvg))}
+      </div>
+      <div class="callout chg"><span>${verdict}</span></div>
+      <section class="rsec"><h3>By size of edge</h3><div class="tbl"><table><thead><tr><th>Estimated EV</th><th class="r">Bets</th><th class="r">Record</th><th class="r">Actual ROI</th><th class="r">Expected ROI</th></tr></thead><tbody>${buckets}</tbody></table></div></section>
+      <section class="rsec"><h3>Bets</h3><div class="tbl"><table><thead><tr><th>Wager</th><th>Book · price</th><th class="r">EV found</th><th class="r">EV at close</th><th>Result</th><th class="r">Profit</th></tr></thead><tbody>${list}</tbody></table></div></section>
+      <ul class="excl" style="font-size:12.5px">
+        <li><b>EV found</b> is the estimate when the bet first showed positive EV, at the price shown.</li>
+        <li><b>EV at close</b> re-checks that same price against the last fair odds Line Finder saw before the game started. Consistently positive means your prices beat where the market settled.</li>
+        <li>Bets are only recorded while Line Finder is open and loading live odds, and scores come from The Odds API (2 credits per sport per check, up to 3 days back).</li></ul>
+    </div>`;
+  }
+  if (el.dataset.h !== h) {
+    el.dataset.h = h; el.innerHTML = h; wireActs(el);
+    const c = $('res-check'); if (c) c.onclick = () => checkResults(true);
+    const x = $('res-clear'); if (x) x.onclick = () => { if (x.dataset.armed) { picks = []; savePicks(); resMsg = 'History cleared.'; render(); } else { x.dataset.armed = '1'; x.textContent = 'Tap again to clear'; } };
+  }
+}
+
 function regroup() { markets = Core.groupMarkets(store, events, allRules()); }
 function render() {
   const now = nowT();
@@ -1931,7 +2124,7 @@ function render() {
   }
   rowsCache = rows; reviewCache = review;
   $('tc-board').textContent = rows.length;
-  syncControls(); renderChips(); renderBoard(rows, now); renderReview(review); renderSnapshot(); renderFoot(now); renderSource();
+  syncControls(); renderChips(); renderBoard(rows, now); renderReview(review); renderSnapshot(); renderResults(); renderFoot(now); renderSource();
   if (S.dialog === 'diag') renderDiag();
   if (S.sel && S.dialog === 'panel') renderPanel();
 }
@@ -2217,7 +2410,7 @@ function onFail(err) {
     feed.retryTimer = setTimeout(() => { feed.retryTimer = null; feed.nextRetry = null; poll(true); }, delay);
   }
 }
-function onOk(now) { feed.fails = 0; feed.blockUntil = null; clearRetry(); feed.lastOk = now; }
+function onOk(now) { feed.fails = 0; feed.blockUntil = null; clearRetry(); feed.lastOk = now; setTimeout(() => { try { trackPicks(); } catch (e) { console.error(e); } }, 0); }
 
 async function connect(ad, opts = {}) {
   timers.forEach(clearInterval); timers = []; clearRetry();
@@ -2431,7 +2624,7 @@ function init() {
   $('open-filters').onclick = e => showDialog('filters', e.currentTarget);
   $('sheet-reset').onclick = () => resetFilters();
   document.querySelectorAll('.tabs [data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
-  document.querySelector('.tabs').onkeydown = e => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return; const v = ['board', 'review', 'snapshot'], k = v.indexOf(S.view); setView(v[(k + (e.key === 'ArrowRight' ? 1 : 2)) % 3]); };
+  document.querySelector('.tabs').onkeydown = e => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return; const v = ['board', 'review', 'snapshot', 'results'], k = v.indexOf(S.view); setView(v[(k + (e.key === 'ArrowRight' ? 1 : 2)) % 3]); };
   // filters
   const on = (id, fn) => $(id).addEventListener('input', e => { fn(e.target.value); savePrefs(); render(); });
   on('f-sport', v => { S.f.sport = v; syncLeagues(); });
