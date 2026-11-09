@@ -862,10 +862,14 @@ startApp(new MyFeedAdapter());</pre></section>
           <p class="hint" id="cost"></p>
           <div class="keyrow" style="width:100%"><button id="k-fetch" class="btn primary" type="button">Fetch odds</button><button id="k-clear" class="btn ghost" type="button">Forget key and cached odds</button></div>
           <span id="src-msg" class="msg" role="alert"></span>
-          <p class="callout" id="shared-note" hidden style="margin:0"><span><b>Shared key.</b> This copy came with an Odds API key from the person who sent it. Every fetch uses their credits.</span></p>
+          <p class="callout" id="shared-note" hidden style="margin:0"><span><b>Shared key.</b> This came with an Odds API key from the person who sent it. Every fetch uses their credits.</span></p>
           <div class="fld" style="gap:8px;border-top:1px solid var(--line);padding-top:12px">
             <span class="lab" style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--fg-3)">Share with friends</span>
-            <p class="hint">Saves a copy of Line Finder with this key built in. Every fetch they make uses your credits, and anyone with the file can read the key.</p>
+            <p class="hint">Copies a link with this key built in. Text it to someone and it opens straight to live odds, no key to type. Every fetch they make uses your credits, and anyone with the link can read the key, so only send it to people you trust.</p>
+            <div class="keyrow" style="width:100%"><button id="k-link" class="btn primary" type="button">Copy link with my key</button></div>
+            <input id="link-out" class="ctl" type="text" readonly hidden aria-label="Link with your key" style="width:100%;font-family:var(--f-mono);font-size:12px">
+            <span id="link-msg" class="msg" role="status" style="color:var(--fg-2)"></span>
+            <p class="hint" style="margin-top:4px">Or save a file copy with the key built in (computer only).</p>
             <div class="keyrow" style="width:100%"><button id="k-share" class="btn" type="button">Save a copy with my key</button></div>
             <span id="share-msg" class="msg" role="status" style="color:var(--fg-2)"></span>
           </div>
@@ -1494,7 +1498,15 @@ class OddsApiAdapter {
 
 /* ===== App ===== */
 const PRISTINE_HTML = '<!doctype html>\n' + document.documentElement.outerHTML;
-const SHARED = (window.LF_SHARED && typeof window.LF_SHARED.key === 'string' && window.LF_SHARED.key) ? window.LF_SHARED : null;
+const SITE_URL = 'https://garrettt99.github.io/line-finder/';
+/* A link with #k=<key> (made by "Copy link with my key") opens straight into live odds with that key. */
+const LINK = (() => { try {
+  const p = new URLSearchParams(location.hash.slice(1)), k = (p.get('k') || '').trim();
+  if (!/^[A-Za-z0-9]{16,64}$/.test(k)) return null;
+  const list = v => v ? v.split(',').filter(Boolean) : undefined;
+  return { key: k, sports: list(p.get('s')), regions: list(p.get('r')), from: 'link' };
+} catch (e) { return null; } })();
+const SHARED = LINK || ((window.LF_SHARED && typeof window.LF_SHARED.key === 'string' && window.LF_SHARED.key) ? window.LF_SHARED : null);
 const PREF_KEY = 'lf-prefs', KEY_KEY = 'lf-oddsapi-key', CACHE_KEY = 'lf-live-cache', RULES_KEY = 'lf-rules';
 const $ = id => document.getElementById(id);
 let adapter, events = {}, books = {}, store = Core.createStore(), markets = [], rowsCache = [], reviewCache = [], timers = [], knownBooks = new Set();
@@ -1781,7 +1793,7 @@ function renderBoard(rows, now) {
     if (!$('k-inline')) {
       const shared = SHARED && getKey() === SHARED.key;
       tb.innerHTML = `<tr class="staterow"><td colspan="5"><div class="state"><span class="st-ic">${I.key}</span><h3>${shared ? 'Ready to fetch live odds' : 'Paste your Odds API key'}</h3>
-        <p>${shared ? "This copy came with a shared key from the person who sent it, so it's already filled in. Each fetch uses their credits." : "It's in the email from The Odds API. It stays in this browser and is only sent to api.the-odds-api.com."}</p>
+        <p>${shared ? "This came with a shared key from the person who sent it, so it's already filled in. Each fetch uses their credits." : "It's in the email from The Odds API. It stays in this browser and is only sent to api.the-odds-api.com."}</p>
         <div class="keyrow"><input id="k-inline" class="ctl" type="password" autocomplete="off" spellcheck="false" placeholder="Paste key here" aria-label="Odds API key" value="${esc(getKey())}"><button id="k-inline-go" class="btn primary" type="button">Fetch odds</button></div>
         <span class="msg" id="k-inline-msg" role="alert"></span>
         <p style="font-size:12.5px;color:var(--fg-3)">Fetching ${esc(S.src.sports.map(s => LIVE_SPORTS[s].league).join(', ') || 'no sports')} from ${esc(S.src.regions.map(r => REGIONS[r]).join(' and ') || 'no')} books, about ${liveDraft().cost()} credits. Live settlement rules start unverified until you record them. <button type="button" class="linkbtn" data-act="settings">Settings</button> · <button type="button" class="linkbtn" data-act="demo">Use the simulated feed</button></p></div></td></tr>`;
@@ -2295,6 +2307,18 @@ function goLive() {
   setTimeout(() => { const k = $('k-inline'); if (k) { k.scrollIntoView({ block: 'center' }); k.focus(); } }, 60);
 }
 function startLive() { const cache = loadCache(); if (cache) connect(liveDraft(), { cache }); else connect(liveDraft(), { idle: true }); }
+function keyLink() {
+  const key = getKey(); if (!key) return null;
+  const base = /github\.io$/.test(location.hostname) ? location.origin + location.pathname : SITE_URL;
+  return `${base}#k=${encodeURIComponent(key)}&s=${S.src.sports.join(',')}&r=${S.src.regions.join(',')}`;
+}
+async function copyKeyLink() {
+  const msg = $('link-msg'), out = $('link-out'), url = keyLink();
+  if (!url) { msg.style.color = 'var(--red)'; msg.textContent = 'Paste your Odds API key above first.'; $('k-key').focus(); return; }
+  out.value = url; out.hidden = false;
+  try { await navigator.clipboard.writeText(url); msg.style.color = 'var(--fg-2)'; msg.textContent = 'Link copied. Paste it into a text. Whoever opens it gets live odds with nothing to type.'; }
+  catch (e) { out.focus(); out.select(); msg.style.color = 'var(--fg-2)'; msg.textContent = 'Link selected below. Copy it and paste it into a text.'; }
+}
 function makeSharedCopy() {
   const key = getKey(), msg = $('share-msg');
   if (!key) { msg.style.color = 'var(--red)'; msg.textContent = 'Paste your Odds API key above first.'; $('k-key').focus(); return; }
@@ -2328,7 +2352,13 @@ function init() {
   $('src-mode').value = S.src.mode;
   const ownKey = store_get(KEY_KEY);
   $('k-key').value = ownKey || (SHARED ? SHARED.key : '');
-  if (SHARED && !store_get(PREF_KEY)) {
+  if (LINK) {
+    $('k-key').value = LINK.key; S.src.remember = true; store_set(KEY_KEY, LINK.key);
+    S.src.mode = 'oddsapi';
+    if (LINK.sports) { const s = LINK.sports.filter(x => LIVE_SPORTS[x]); if (s.length) S.src.sports = s; }
+    if (LINK.regions) { const r = LINK.regions.filter(x => REGIONS[x]); if (r.length) S.src.regions = r; }
+    savePrefs();
+  } else if (SHARED && !store_get(PREF_KEY)) {
     S.src.mode = 'oddsapi';
     if (Array.isArray(SHARED.sports)) S.src.sports = SHARED.sports.filter(s => LIVE_SPORTS[s]);
     if (Array.isArray(SHARED.regions)) S.src.regions = SHARED.regions.filter(r => REGIONS[r]);
@@ -2348,7 +2378,7 @@ function init() {
   $('k-remember').onchange = e => { S.src.remember = e.target.checked; savePrefs(); store_set(KEY_KEY, S.src.remember ? getKey() || null : null); };
   $('k-key').addEventListener('input', () => { if (S.src.remember) store_set(KEY_KEY, getKey() || null); renderMast(); });
   $('k-show').onclick = e => { const k = $('k-key'), show = k.type === 'password'; k.type = show ? 'text' : 'password'; e.target.textContent = show ? 'Hide' : 'Show'; e.target.setAttribute('aria-pressed', show); };
-  $('k-fetch').onclick = fetchLive; $('k-share').onclick = makeSharedCopy;
+  $('k-fetch').onclick = fetchLive; $('k-share').onclick = makeSharedCopy; $('k-link').onclick = copyKeyLink;
   $('k-clear').onclick = () => { store_set(CACHE_KEY, null); store_set(KEY_KEY, null); $('k-key').value = ''; if (isLive()) connect(liveDraft(), { idle: true }); };
   // review thresholds
   $('r-on').onchange = e => { S.review.enabled = e.target.checked; savePrefs(); render(); };
@@ -2448,6 +2478,7 @@ function init() {
 function startApp(defaultAdapter) {
   init();
   if (location.hash === '#live') { goLive(); return; }
+  if (LINK) { fetchLive(); return; }
   if (S.src.mode === 'oddsapi') startLive(); else connect(defaultAdapter);
 }
 startApp(new DemoOddsAdapter());

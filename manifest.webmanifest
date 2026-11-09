@@ -1,7 +1,6 @@
 {
   "name": "Line Finder",
   "short_name": "Line Finder",
-  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#090d12",
