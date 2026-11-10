@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Line Finder</title>
+<script>window.LF_SHARED={key:'de0ad597b95e2027f4bcabc1f8f9d70b',builtin:true};</script>
 <meta name="theme-color" content="#090d12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2572,7 +2573,7 @@ function init() {
     if (LINK.sports) { const s = LINK.sports.filter(x => LIVE_SPORTS[x]); if (s.length) S.src.sports = s; }
     if (LINK.regions) { const r = LINK.regions.filter(x => REGIONS[x]); if (r.length) S.src.regions = r; }
     savePrefs();
-  } else if (SHARED && !store_get(PREF_KEY)) {
+  } else if (SHARED && (!store_get(PREF_KEY) || (SHARED.builtin && !ownKey))) {
     S.src.mode = 'oddsapi';
     if (Array.isArray(SHARED.sports)) S.src.sports = SHARED.sports.filter(s => LIVE_SPORTS[s]);
     if (Array.isArray(SHARED.regions)) S.src.regions = SHARED.regions.filter(r => REGIONS[r]);
