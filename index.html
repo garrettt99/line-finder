@@ -844,6 +844,7 @@ startApp(new MyFeedAdapter());</pre></section>
     <section class="sec"><h3>Needs review thresholds</h3>
       <div class="form">
         <label class="chk" style="padding-left:0"><input type="checkbox" id="r-on"> Send flagged offers to Needs review (recommended)</label>
+        <label class="chk" style="padding-left:0"><input type="checkbox" id="r-auto"> Auto-check flagged offers: re-pull just that game and move it to the board if the price holds (about 2 to 6 credits per game)</label>
         <div class="form-grid">
           <div class="fld"><label for="r-gap">Unusual price: gap from median</label><div class="evin" style="width:100%"><input id="r-gap" class="ctl" type="number" min="1" max="50" step="0.5"><span>pts</span></div></div>
           <div class="fld"><label for="r-edge">Unusually large edge above</label><div class="evin" style="width:100%"><input id="r-edge" class="ctl" type="number" min="1" max="100" step="0.5"><span>%</span></div></div>
@@ -1131,7 +1132,13 @@ const Core = (() => {
           if (o) flags.push({ code: 'price', label: 'Unusual price', reason: `Implies ${(o.imp * 100).toFixed(1)}%, ${Math.abs(o.diff).toFixed(1)} pts ${o.diff > 0 ? 'below' : 'above'} the median of ${o.n} other books (${(o.med * 100).toFixed(1)}%). Threshold ${rv.gapPts} pts.` });
           if (r.status === 'ok' && r.fair.refs.length < rv.minRefs) flags.push({ code: 'refs', label: 'Few references', reason: `EV rests on ${r.fair.refs.length} fresh reference${r.fair.refs.length === 1 ? '' : 's'}; review threshold is ${rv.minRefs}.` });
           if (r.status === 'ok' && r.ev > rv.maxEdge) flags.push({ code: 'edge', label: 'Unusually large edge', reason: `Estimated EV ${r.ev.toFixed(1)}% is above the ${rv.maxEdge}% review threshold.` });
-          return { q, posted, d: r.d, book: q.book, r, ev: r.status === 'ok' ? r.ev : null, age: now - q.updated, flags, flagged: rv.enabled && flags.length > 0, withheld: r.status === 'commission-unknown' };
+          /* Auto-check: a fresh re-pull of this game confirmed the same price with enough references, so the edge/price flags are cleared. */
+          const vk = cfg.verified && cfg.verified.get(m.key + '#' + i + '|' + q.book);
+          let checked = null;
+          if (vk && vk.verdict === 'ok' && vk.price === q.prices[i] && now - vk.at < 15 * MIN && r.status === 'ok' && !flags.some(f => f.code === 'refs') && r.ev <= (rv.capEdge || 20)) {
+            checked = vk; for (let k = flags.length - 1; k >= 0; k--) if (flags[k].code === 'edge' || flags[k].code === 'price') flags.splice(k, 1);
+          }
+          return { q, posted, d: r.d, book: q.book, r, ev: r.status === 'ok' ? r.ev : null, age: now - q.updated, flags, flagged: rv.enabled && flags.length > 0, withheld: r.status === 'commission-unknown', checked };
         });
         offers.filter(o => o.flagged).forEach(o => review.push({ kind: 'flag', m, i, ev, q: o.q, offer: o, reasons: o.flags }));
         const rankable = offers.filter(o => !o.flagged && !o.withheld);
@@ -1617,12 +1624,13 @@ const $ = id => document.getElementById(id);
 let adapter, events = {}, books = {}, store = Core.createStore(), markets = [], rowsCache = [], reviewCache = [], timers = [], knownBooks = new Set();
 const feed = { status: 'loading', lastOk: null, lastAttempt: null, lastFail: null, fails: 0, nextRetry: null, retryTimer: null, blockUntil: null, polling: false };
 const BACKOFF = [5, 15, 45, 120, 300];
+const AV = new Map(), avEventAt = new Map(); let avBusy = false;
 const S = {
   fmt: 'us', sort: { key: 'ev', dir: -1 }, view: 'board', sel: null, selBook: null, snap: null, lastFocus: null, dialog: null, returnFocus: null,
   paused: false, pausedAt: null, entered: {},
   f: { sport: 'all', league: 'all', market: 'all', starts: 'all', minEv: '', age: 'fresh', books: null, booksPref: null },
   m: { method: 'consensus', refBook: null, minRef: 2, staleMin: 15, pushEst: true },
-  review: { ...Core.DEFAULT_REVIEW },
+  review: { ...Core.DEFAULT_REVIEW, auto: true, capEdge: 20 },
   ex: {}, userRules: {},
   src: { mode: 'demo', regions: ['us', 'eu'], sports: ['americanfootball_nfl', 'basketball_nba', 'icehockey_nhl'], autoMin: 0, remember: true, minGapSec: 60, stdRules: true }
 };
@@ -1653,7 +1661,7 @@ function savePrefs() {
 const allRules = () => ({ ...(adapter && adapter.live && S.src.stdRules ? STANDARD_RULES : {}), ...(adapter && adapter.rules || {}), ...S.userRules });
 const feedExpired = () => !feed.lastOk || nowT() - feed.lastOk > S.m.staleMin * MIN;
 const exCfg = () => { const o = {}; for (const [k, v] of Object.entries(S.ex)) o[k] = { rate: v.rate === '' || v.rate == null ? null : +v.rate / 100, basis: v.basis || 'unknown' }; return o; };
-const cfg = () => ({ ...S.m, pushModel: S.m.pushEst ? Core.demoPushModel : null, review: S.review, feedExpired: feedExpired(), isExchange: id => !!(books[id] && books[id].exchange), exchanges: exCfg() });
+const cfg = () => ({ ...S.m, pushModel: S.m.pushEst ? Core.demoPushModel : null, review: S.review, verified: AV, feedExpired: feedExpired(), isExchange: id => !!(books[id] && books[id].exchange), exchanges: exCfg() });
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pct = x => (x * 100).toFixed(1) + '%';
 const sgnPct = x => (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(1) + '%';
@@ -1850,7 +1858,7 @@ function syncLeagues() {
 
 /* ---------- board ---------- */
 function evCell(r) {
-  if (r.evv != null) { const p = r.evv > 0; return `<span class="ev ${p ? 'pos' : 'neg'}">${sgnPct(r.evv)}</span>${p ? '<span class="badge pos">▲ Positive EV</span>' : '<span class="badge neg">▼ Negative EV</span>'}${r.pick.r.ex && r.pick.r.ex.isEx ? '<span class="cell-sub">after commission, est.</span>' : ''}`; }
+  if (r.evv != null) { const p = r.evv > 0; return `<span class="ev ${p ? 'pos' : 'neg'}">${sgnPct(r.evv)}</span>${p ? '<span class="badge pos">▲ Positive EV</span>' : '<span class="badge neg">▼ Negative EV</span>'}${r.pick && r.pick.checked ? '<span class="badge ok" title="This edge was flagged, then Line Finder re-pulled the game and confirmed the price is still there with enough books agreeing on the fair price.">✓ Auto-checked</span>' : ''}${r.pick.r.ex && r.pick.r.ex.isEx ? '<span class="cell-sub">after commission, est.</span>' : ''}`; }
   const st = r.r.status;
   return `<span class="ev na">—</span><span class="badge na">${st === 'conditional' ? '◌ Needs push est.' : st === 'commission-unknown' ? '◌ Commission unknown' : '◌ No fair odds'}</span>`;
 }
@@ -1943,7 +1951,7 @@ function renderReview(review) {
     const sel = x.i != null ? x.m.outcomes[x.i] : x.m.outcomes.join(' / ');
     const price = x.i != null ? fmtA(q.prices[x.i]) : q.prices.map(fmtA).join(' / ');
     return `<button type="button" class="ritem" data-open="${esc(id)}" data-book="${esc(q.book)}" data-rk="${esc(rk)}"><span><span class="rt">${esc(sel)}</span> <span class="rm">${typeName(x.m, e.league)}${x.m.settlement ? ' · ' + esc(x.m.settlement) : ''} · ${esc(vs(e))}</span></span><span class="rp">${price}</span>
-      <span class="rr"><span><b>${esc(bookName(q.book))}</b> · ${quoteTime(q)}${x.offer && x.offer.ev != null ? ` · EV as quoted ${sgnPct(x.offer.ev)} (not ranked)` : ''}</span>${x.reasons.map(r => `<span><span class="badge ${r.code === 'rules' ? 'unv' : 'flag'}" style="margin:0 6px 0 0">${r.code === 'rules' ? '◇' : '⚑'} ${esc(r.label)}</span>${r.code === 'rules' ? `No verified rule for ${esc(bookName(q.book))} · ${esc(e.league)} · ${esc(typeName(x.m, e.league).toLowerCase())} · full game. Kept out of cross-book EV.` : esc(r.reason)}</span>`).join('')}</span></button>`;
+      <span class="rr"><span><b>${esc(bookName(q.book))}</b> · ${quoteTime(q)}${x.offer && x.offer.ev != null ? ` · EV as quoted ${sgnPct(x.offer.ev)} (not ranked)` : ''}</span>${avLine(x)}${x.reasons.map(r => `<span><span class="badge ${r.code === 'rules' ? 'unv' : 'flag'}" style="margin:0 6px 0 0">${r.code === 'rules' ? '◇' : '⚑'} ${esc(r.label)}</span>${r.code === 'rules' ? `No verified rule for ${esc(bookName(q.book))} · ${esc(e.league)} · ${esc(typeName(x.m, e.league).toLowerCase())} · full game. Kept out of cross-book EV.` : esc(r.reason)}</span>`).join('')}</span></button>`;
   };
   let h = '<div class="rv">';
   let total = 0;
@@ -2133,6 +2141,65 @@ function render() {
   syncControls(); renderChips(); renderBoard(rows, now); renderReview(review); renderSnapshot(); renderResults(); renderFoot(now); renderSource();
   if (S.dialog === 'diag') renderDiag();
   if (S.sel && S.dialog === 'panel') renderPanel();
+  if (isLive() && !avBusy && S.review.auto !== false) setTimeout(autoReview, 0);
+}
+
+/* ---------- auto-check of flagged offers ---------- */
+const AV_TTL = 10 * MIN, AV_MAX_EVENTS = 4;
+const avKey = x => x.m.key + '#' + x.i + '|' + x.q.book;
+const AV_MKT = { ml: 'h2h', ml3: 'h2h', spread: 'spreads', total: 'totals' };
+function avLine(x) {
+  if (x.kind !== 'flag' || x.i == null) return '';
+  const a = AV.get(avKey(x));
+  if (avBusy && avEventAt.get(x.ev.id) && (!a || a.at < avEventAt.get(x.ev.id))) return '<span><span class="badge ok" style="margin:0 6px 0 0">⟳ Auto-checking</span>Re-pulling this game to confirm the price.</span>';
+  if (!a || a.price !== x.q.prices[x.i]) return S.review.auto === false ? '' : '<span><span class="badge ok" style="margin:0 6px 0 0">⟳ Queued</span>Will be auto-checked on the next pass.</span>';
+  const msg = { thin: 'Price confirmed on a fresh re-pull, but too few other books price this bet to trust the fair odds. Check it by hand.', cap: `Price confirmed on a fresh re-pull, but the edge is over ${S.review.capEdge || 20}%, which almost always means the bets don't match (different rules or line). Check it by hand.`, fail: 'The re-pull failed, so this could not be confirmed. It will try again later.' }[a.verdict];
+  return msg ? `<span><span class="badge flag" style="margin:0 6px 0 0">✕ Auto-check: not confirmed</span>${esc(msg)}</span>` : '';
+}
+async function autoReview() {
+  if (avBusy || !isLive() || S.review.auto === false || !S.review.enabled || S.paused || feed.polling || feed.status === 'loading' || feed.status === 'idle' || !getKey()) return;
+  const now = Date.now(), pending = new Map();
+  for (const x of reviewCache) {
+    if (x.kind !== 'flag' || x.i == null || !x.reasons.some(r => r.code === 'edge' || r.code === 'price')) continue;
+    const a = AV.get(avKey(x));
+    if (a && a.price === x.q.prices[x.i] && now - a.at < AV_TTL) continue;
+    if (now - (avEventAt.get(x.ev.id) || 0) < AV_TTL) continue;
+    if (!pending.has(x.ev.id)) pending.set(x.ev.id, { ev: x.ev, mk: new Set(), items: [] });
+    const g = pending.get(x.ev.id); g.mk.add(AV_MKT[x.m.type]); g.items.push({ k: avKey(x), price: x.q.prices[x.i] });
+  }
+  const todo = [...pending.values()].slice(0, AV_MAX_EVENTS);
+  if (!todo.length) return;
+  avBusy = true; todo.forEach(g => avEventAt.set(g.ev.id, now));
+  if (S.view === 'review') renderReview(reviewCache);
+  const ad = adapter, regions = S.src.regions.slice(), checked = [];
+  await Promise.all(todo.map(async g => {
+    const url = `https://api.the-odds-api.com/v4/sports/${g.ev.sk}/events/${encodeURIComponent(g.ev.id)}/odds/?apiKey=${encodeURIComponent(ad.key)}&regions=${regions.join(',')}&markets=${[...g.mk].join(',')}&oddsFormat=american&dateFormat=iso&includeLinks=true`;
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      const rem = res.headers.get('x-requests-remaining'), used = res.headers.get('x-requests-used');
+      if (rem != null) ad.quota = { remaining: +rem, used: used != null ? +used : null, at: Date.now() };
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json(), evs = {}, bks = {}, offers = [], rej = [];
+      ad._mapEvent(data, LIVE_SPORTS[g.ev.sk], g.ev.sk, regions[0], evs, bks, offers, rej);
+      const t = Date.now();
+      if (evs[g.ev.id]) Object.assign(events[g.ev.id] || (events[g.ev.id] = {}), evs[g.ev.id]);
+      offers.forEach(o => { const rg = (books[o.book] && books[o.book].region) || (bks[o.book] && bks[o.book].region) || regions[0]; o.region = rg; o._scope = g.ev.sk + '|' + rg; Core.ingest(store, events, o, t, t); });
+      checked.push(g);
+    } catch (e) { g.items.forEach(it => AV.set(it.k, { verdict: 'fail', price: it.price, at: Date.now() })); }
+  }));
+  if (adapter !== ad) { avBusy = false; return; }
+  regroup();
+  // Re-run the analysis on the merged data, then record a verdict for each item that is still flagged.
+  const res = Core.analyze(markets, events, cfg(), { ...S.f, maxAgeMin: maxAgeMin() }, nowT());
+  const still = new Map(res.review.filter(x => x.kind === 'flag' && x.i != null).map(x => [avKey(x), x]));
+  const t = Date.now(), cap = S.review.capEdge || 20;
+  for (const g of checked) for (const it of g.items) {
+    const x = still.get(it.k);
+    if (!x || x.q.prices[x.i] !== it.price) { AV.delete(it.k); continue; } // price moved or no longer flagged: resolved by the fresh data
+    const thin = x.reasons.some(r => r.code === 'refs'), evv = x.offer && x.offer.ev;
+    AV.set(it.k, { verdict: thin || evv == null ? 'thin' : evv > cap ? 'cap' : 'ok', price: it.price, at: t, ev: evv });
+  }
+  avBusy = false; saveCache(); buildBooks(); render();
 }
 
 /* ---------- dialogs ---------- */
@@ -2494,7 +2561,7 @@ function renderSettings() {
   $('rules-list').innerHTML = (built ? `<p class="hint">${built} rule${built === 1 ? '' : 's'} supplied by the ${isDemo() ? 'simulated feed (fictional demo books)' : 'feed adapter'}.</p>` : '') + (rules.length ? rules.map(([k, r]) => { const [b, lg, t, p] = k.split('|'); return `<div class="rule"><span><b>${esc(bookName(b))}</b> · ${esc(lg)} · ${esc(t)} · ${esc(p)} → ${esc(r.rule)}</span><span class="s">${esc(r.source)} · reviewed ${esc(r.reviewed)}</span><button class="btn sm ghost" type="button" data-delrule="${esc(k)}" aria-label="Delete rule for ${esc(bookName(b))} ${esc(lg)} ${esc(t)}">Delete</button></div>`; }).join('') : '<p class="hint">No rules recorded by you yet.</p>');
   $('rules-list').querySelectorAll('[data-delrule]').forEach(b => b.onclick = () => { delete S.userRules[b.dataset.delrule]; store_set(RULES_KEY, JSON.stringify(S.userRules)); regroup(); renderSettings(); render(); });
   if (!$('ru-date').value) $('ru-date').value = new Date().toISOString().slice(0, 10);
-  $('r-on').checked = S.review.enabled; $('r-gap').value = S.review.gapPts; $('r-edge').value = S.review.maxEdge; $('r-refs').value = String(S.review.minRefs);
+  $('r-on').checked = S.review.enabled; $('r-auto').checked = S.review.auto !== false; $('r-gap').value = S.review.gapPts; $('r-edge').value = S.review.maxEdge; $('r-refs').value = String(S.review.minRefs);
   $('src-gap').value = String(S.src.minGapSec);
 }
 async function fetchLive() {
@@ -2599,6 +2666,7 @@ function init() {
   $('k-clear').onclick = () => { store_set(CACHE_KEY, null); store_set(KEY_KEY, null); $('k-key').value = ''; if (isLive()) connect(liveDraft(), { idle: true }); };
   // review thresholds
   $('r-on').onchange = e => { S.review.enabled = e.target.checked; savePrefs(); render(); };
+  $('r-auto').onchange = e => { S.review.auto = e.target.checked; savePrefs(); render(); };
   const thr = (id, k, min, max) => $(id).onchange = e => { const v = +e.target.value; if (Number.isFinite(v) && v >= min && v <= max) { S.review[k] = v; savePrefs(); render(); } else e.target.value = S.review[k]; };
   thr('r-gap', 'gapPts', 1, 50); thr('r-edge', 'maxEdge', 1, 100); $('r-refs').onchange = e => { S.review.minRefs = +e.target.value; savePrefs(); render(); };
   // settlement rules editor
