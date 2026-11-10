@@ -1624,7 +1624,7 @@ const $ = id => document.getElementById(id);
 let adapter, events = {}, books = {}, store = Core.createStore(), markets = [], rowsCache = [], reviewCache = [], timers = [], knownBooks = new Set();
 const feed = { status: 'loading', lastOk: null, lastAttempt: null, lastFail: null, fails: 0, nextRetry: null, retryTimer: null, blockUntil: null, polling: false };
 const BACKOFF = [5, 15, 45, 120, 300];
-const AV = new Map(), avEventAt = new Map(); let avBusy = false;
+const AV = new Map(), avEventAt = new Map(); let avBusy = false, avPassFor = null;
 const S = {
   fmt: 'us', sort: { key: 'ev', dir: -1 }, view: 'board', sel: null, selBook: null, snap: null, lastFocus: null, dialog: null, returnFocus: null,
   paused: false, pausedAt: null, entered: {},
@@ -2152,15 +2152,17 @@ function avLine(x) {
   if (x.kind !== 'flag' || x.i == null) return '';
   const a = AV.get(avKey(x));
   if (avBusy && avEventAt.get(x.ev.id) && (!a || a.at < avEventAt.get(x.ev.id))) return '<span><span class="badge ok" style="margin:0 6px 0 0">⟳ Auto-checking</span>Re-pulling this game to confirm the price.</span>';
-  if (!a || a.price !== x.q.prices[x.i]) return S.review.auto === false ? '' : '<span><span class="badge ok" style="margin:0 6px 0 0">⟳ Queued</span>Will be auto-checked on the next pass.</span>';
+  if (!a || a.price !== x.q.prices[x.i]) return S.review.auto === false || !(x.offer && x.offer.ev > 0) ? '' : '<span><span class="badge ok" style="margin:0 6px 0 0">⟳ Queued</span>Will be auto-checked after the next odds refresh (up to 4 games per refresh, biggest edges first).</span>';
   const msg = { thin: 'Price confirmed on a fresh re-pull, but too few other books price this bet to trust the fair odds. Check it by hand.', cap: `Price confirmed on a fresh re-pull, but the edge is over ${S.review.capEdge || 20}%, which almost always means the bets don't match (different rules or line). Check it by hand.`, fail: 'The re-pull failed, so this could not be confirmed. It will try again later.' }[a.verdict];
   return msg ? `<span><span class="badge flag" style="margin:0 6px 0 0">✕ Auto-check: not confirmed</span>${esc(msg)}</span>` : '';
 }
 async function autoReview() {
   if (avBusy || !isLive() || S.review.auto === false || !S.review.enabled || S.paused || feed.polling || feed.status === 'loading' || feed.status === 'idle' || !getKey()) return;
+  if (avPassFor === feed.lastOk) return; // one pass per odds fetch, to cap credit use
   const now = Date.now(), pending = new Map();
-  for (const x of reviewCache) {
-    if (x.kind !== 'flag' || x.i == null || !x.reasons.some(r => r.code === 'edge' || r.code === 'price')) continue;
+  // Only positive-EV flags are worth checking; biggest edge first.
+  const cands = reviewCache.filter(x => x.kind === 'flag' && x.i != null && x.offer && x.offer.ev != null && x.offer.ev > 0 && x.reasons.some(r => r.code === 'edge' || r.code === 'price')).sort((a, b) => b.offer.ev - a.offer.ev);
+  for (const x of cands) {
     const a = AV.get(avKey(x));
     if (a && a.price === x.q.prices[x.i] && now - a.at < AV_TTL) continue;
     if (now - (avEventAt.get(x.ev.id) || 0) < AV_TTL) continue;
@@ -2168,6 +2170,7 @@ async function autoReview() {
     const g = pending.get(x.ev.id); g.mk.add(AV_MKT[x.m.type]); g.items.push({ k: avKey(x), price: x.q.prices[x.i] });
   }
   const todo = [...pending.values()].slice(0, AV_MAX_EVENTS);
+  avPassFor = feed.lastOk;
   if (!todo.length) return;
   avBusy = true; todo.forEach(g => avEventAt.set(g.ev.id, now));
   if (S.view === 'review') renderReview(reviewCache);
