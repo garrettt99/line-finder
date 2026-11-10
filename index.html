@@ -2521,7 +2521,7 @@ function goLive() {
   startLive();
   setTimeout(() => { const k = $('k-inline'); if (k) { k.scrollIntoView({ block: 'center' }); k.focus(); } }, 60);
 }
-function startLive() { const cache = loadCache(); if (cache) connect(liveDraft(), { cache }); else connect(liveDraft(), { idle: true }); }
+function startLive() { const cache = loadCache(); if (cache) connect(liveDraft(), { cache }); else connect(liveDraft(), { idle: true }); if (getKey() && (!cache || !cache.fetchedAt || Date.now() - cache.fetchedAt > 5 * 60 * 1000)) setTimeout(() => { if (isLive()) fetchLive(); }, 0); }
 function keyLink() {
   const key = getKey(); if (!key) return null;
   const base = /github\.io$/.test(location.hostname) ? location.origin + location.pathname : SITE_URL;
