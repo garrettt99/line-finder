@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
 <style>
-/* Layout: research terminal. Compact masthead (source, feed state, last fetch, refresh with cooldown), filter bar with removable chips, then the odds board with Board / Needs review / Snapshot views. The verification drawer slides in from the right (full screen on phones). Single dark look by design. */
+/* Layout: research terminal. Compact masthead (source, feed state, last fetch, refresh with cooldown), filter bar with removable chips, then the odds board with Board / Snapshot / Results views. The verification drawer slides in from the right (full screen on phones). Single dark look by design. */
 :root{
   --bg:#090d12; --surface:#0f151d; --raised:#141c26; --hover:#18222e; --sel:#0f2620;
   --line:#1e2833; --line-2:#2a3542; --line-3:#3b4858;
@@ -694,7 +694,7 @@ div.ritem{cursor:default}
       <h2 id="board-title" class="sr">Odds board</h2>
       <div class="tabs" role="tablist" aria-label="Views">
         <button type="button" role="tab" id="tab-board" data-view="board" aria-selected="true" aria-controls="view-board">Board <span class="tcount" id="tc-board"></span></button>
-        <button type="button" role="tab" id="tab-review" data-view="review" aria-selected="false" aria-controls="view-review">Needs review <span class="tcount" id="tc-review"></span></button>
+        <button type="button" role="tab" id="tab-review" data-view="review" hidden aria-selected="false" aria-controls="view-review">Needs review <span class="tcount" id="tc-review"></span></button>
         <button type="button" role="tab" id="tab-snapshot" data-view="snapshot" aria-selected="false" aria-controls="view-snapshot">Snapshot <span class="tcount" id="tc-snapshot"></span></button>
         <button type="button" role="tab" id="tab-results" data-view="results" aria-selected="false" aria-controls="view-results">Results <span class="tcount" id="tc-results"></span></button>
       </div>
@@ -778,7 +778,7 @@ div.ritem{cursor:default}
         <li><span class="ev-tag pos">+EV</span><span><b>Positive EV.</b> The price beats the market's fair estimate. Worth a closer look.</span></li>
         <li><span class="ev-tag">Fair odds</span><span><b>Fair odds.</b> What the price would be with no cut taken. Better than this is +EV.</span></li>
         <li><span class="ev-tag">Best price</span><span><b>Best price.</b> The best number any book has. It isn't automatically +EV, because sometimes every book is bad.</span></li>
-        <li><span class="ev-tag warn">Review</span><span><b>Needs review.</b> The EV looks too good to be true, often a stale or mistaken price. Check before betting.</span></li>
+        <li><span class="ev-tag">✓ Checked</span><span><b>Auto-checked.</b> The EV looked too good to be true, so Line Finder re-pulled the game and confirmed the price still holds with enough books agreeing. Offers that fail are screened out automatically.</span></li>
         <li><span class="ev-tag">Your price</span><span><b>Price you see at.</b> If the book's price has moved, type it into the wager's detail panel and EV recalculates. A small move can flip a bet from positive to negative.</span></li>
       </ul></section>
     <section class="sec"><div class="callout warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h0"/></svg><span><b>EV is an average over many bets, not a promise.</b> A +3% bet still loses often. It's an estimate built from what the other books think, so it shows where the value probably is, not a sure thing.</span></div></section>
@@ -789,7 +789,7 @@ div.ritem{cursor:default}
   <div class="dp-head"><h2 id="about-title">About Line Finder</h2><button class="iconbtn" type="button" data-close aria-label="Close About">✕</button></div>
   <div class="dp-body">
     <section class="sec"><h3>Workflow</h3>
-      <ol class="steps"><li><span><b>Find an opportunity.</b> The board ranks each exact wager by the offer with the highest estimated EV. Suspicious offers go to Needs review instead.</span></li>
+      <ol class="steps"><li><span><b>Find an opportunity.</b> The board ranks each exact wager by the offer with the highest estimated EV. Suspicious offers are checked automatically and screened out if they don't hold up.</span></li>
         <li><span><b>Compare the offers.</b> Open a row to see every book's price for that exact wager.</span></li>
         <li><span><b>Verify the estimate.</b> Check the exact selection, line, period and price, type the price you see at the book, and Line Finder recalculates EV at that price.</span></li></ol></section>
     <section class="sec"><h3>What depends on the feed</h3>
@@ -841,9 +841,9 @@ startApp(new MyFeedAdapter());</pre></section>
         <label class="chk" style="padding-left:0"><input type="checkbox" id="m-push"> Use demo push estimates for whole-number NFL and NCAAF lines</label>
       </div>
     </section>
-    <section class="sec"><h3>Needs review thresholds</h3>
+    <section class="sec"><h3>Automatic screening</h3>
       <div class="form">
-        <label class="chk" style="padding-left:0"><input type="checkbox" id="r-on"> Send flagged offers to Needs review (recommended)</label>
+        <label class="chk" style="padding-left:0"><input type="checkbox" id="r-on"> Screen out suspicious offers automatically (recommended)</label>
         <label class="chk" style="padding-left:0"><input type="checkbox" id="r-auto"> Auto-check flagged offers: re-pull just that game and move it to the board if the price holds (about 2 to 6 credits per game)</label>
         <div class="form-grid">
           <div class="fld"><label for="r-gap">Unusual price: gap from median</label><div class="evin" style="width:100%"><input id="r-gap" class="ctl" type="number" min="1" max="50" step="0.5"><span>pts</span></div></div>
@@ -1877,7 +1877,7 @@ function rowHTML(r) {
   const bp = r.priceOffer, bpn = bookName(bp.book), feedOld = feed.fails > 0;
   const bestTag = r.nBooks > 1 ? (r.pickIsBest ? (r.outright ? '<span class="badge best">◆ Best price</span>' : `<span class="cell-sub">Tied best · ${r.offers.filter(o => o.d === bp.d && !o.flagged && !o.withheld).length} books</span>`) : '') : '<span class="cell-sub">Only 1 rankable book</span>';
   const splitTxt = r.split ? `Best price <b>${fmtOdds(bp.posted)}</b> at ${esc(bpn)} · EV ${bp.ev != null ? sgnPct(bp.ev) : 'n/a'}` : '';
-  const notes = [r.flaggedCount ? `⚑ ${r.flaggedCount} offer${r.flaggedCount === 1 ? '' : 's'} in Needs review` : ''].filter(Boolean).join(' · ');
+  const notes = [r.flaggedCount ? `${r.flaggedCount} suspicious offer${r.flaggedCount === 1 ? '' : 's'} screened out` : ''].filter(Boolean).join(' · ');
   return `<tr class="row${S.sel === r.id ? ' sel' : ''}" tabindex="0" data-id="${esc(r.id)}" aria-selected="${S.sel === r.id}" aria-label="${esc(`${r.wager}, ${mk}, ${vs(e)}. Offer ${fmtOdds(r.posted)} at ${bk}, ${ageOf(r.q)}. ${r.evv != null ? 'Estimated EV ' + sgnPct(r.evv) : 'EV unavailable'}.`)}">
     <td class="c-wager"><div class="w-title"><span class="w-sel">${esc(r.wager)}</span><span class="w-mk">${esc(mk)}</span></div>
       <div class="w-meta"><span class="lg">${e.league}</span><span class="mu">${esc(vs(e))}</span><span>· ${startStr(e.start)}</span>${notes ? `<span class="rowflag">${notes}</span>` : ''}</div></td>
@@ -1997,7 +1997,9 @@ function renderFoot(now) {
   const foot = $('board-foot');
   let held = 0, susp = 0, started = 0, unk = 0;
   for (const m of markets) { if (events[m.eventId].start <= now) { started++; continue; } for (const q of m.quotes) { const st = Core.quoteState(q, now, S.m.staleMin * MIN, feedExpired()); if (st === 'stale' || st === 'expired') held++; else if (st === 'unknown-age') unk++; else if (st !== 'open') susp++; } }
-  const fh = `<span><span class="badge warn">◷ Stale</span> ${held} held back</span><span><span class="badge bad">⏸ Suspended</span> ${susp}</span>${unk ? `<span><span class="badge flag">? Age unknown</span> ${unk}</span>` : ''}${started ? `<span>${started} market${started === 1 ? '' : 's'} already started</span>` : ''}<span>${store.invalid.length} invalid · ${store.outOfOrder} out of order</span>${isDemo() ? '<span class="srctag sim" style="height:20px;font-size:10.5px">Simulated feed</span>' : ''}`;
+  const promoted = rowsCache.filter(r => r.pick && r.pick.checked).length, screened = reviewCache.length;
+  const av = isLive() && S.review.enabled ? `<span><span class="badge ok">✓ Auto-review</span> ${avBusy ? 'checking flagged offers… · ' : ''}${promoted} confirmed · ${screened} screened out</span>` : '';
+  const fh = av + `<span><span class="badge warn">◷ Stale</span> ${held} held back</span><span><span class="badge bad">⏸ Suspended</span> ${susp}</span>${unk ? `<span><span class="badge flag">? Age unknown</span> ${unk}</span>` : ''}${started ? `<span>${started} market${started === 1 ? '' : 's'} already started</span>` : ''}<span>${store.invalid.length} invalid · ${store.outOfOrder} out of order</span>${isDemo() ? '<span class="srctag sim" style="height:20px;font-size:10.5px">Simulated feed</span>' : ''}`;
   if (foot.dataset.h !== fh) { foot.dataset.h = fh; foot.innerHTML = fh; }
 }
 function wireActs(root) {
@@ -2014,7 +2016,7 @@ function wireActs(root) {
     else if (a === 'demo') { S.src.mode = 'demo'; savePrefs(); $('src-mode').value = 'demo'; connect(new DemoOddsAdapter()); }
   });
 }
-function setView(v) { S.view = v; render(); const t = $('tab-' + v); if (t) t.focus(); }
+function setView(v) { if (v === 'review') v = 'board'; S.view = v; render(); const t = $('tab-' + v); if (t) t.focus(); }
 
 /* ---------- results tracking (live odds only, stored on this device) ---------- */
 const PICKS_KEY = 'lf-picks', PICKS_MAX = 1500, SCORE_GAP = 20 * 60000, DAY = 86400000;
@@ -2340,7 +2342,7 @@ function renderPanel() {
       <div id="yp-res">${so ? yourPriceHTML(so, m, i) : '<p class="hint">This quote has no price for this selection.</p>'}</div></div></section>`;
   // 2) flags / unverified / exchange callouts
   let callouts = '';
-  if (so && so.flags && so.flags.length) callouts += `<div class="callout warn">${I.warn}<span><b>${so.flagged ? 'Needs review, not ranked.' : 'Flags (review routing is off).'}</b>${so.flags.map(f => `<span style="display:block"><span class="badge flag" style="margin:2px 6px 0 0">⚑ ${esc(f.label)}</span>${esc(f.reason)}</span>`).join('')}</span></div>`;
+  if (so && so.flags && so.flags.length) callouts += `<div class="callout warn">${I.warn}<span><b>${so.flagged ? 'Screened out automatically, not ranked.' : 'Flags (screening is off).'}</b>${so.flags.map(f => `<span style="display:block"><span class="badge flag" style="margin:2px 6px 0 0">⚑ ${esc(f.label)}</span>${esc(f.reason)}</span>`).join('')}</span></div>`;
   if (m.unverified) callouts += `<div class="callout warn">${I.warn}<span style="display:block"><b>Settlement rules unverified.</b> There is no verified rule for ${esc(bk)} · ${e.league} · ${typeName(m, e.league).toLowerCase()} · full game, so this quote is kept out of cross-book EV. <span class="dep">The feed doesn't state it</span>
       <span class="rulefix"><span class="form-grid"><span class="fld"><label for="rf-rule">Settles on</label><select id="rf-rule" class="ctl" data-fk="rf-rule"><option>Incl. OT</option><option>Incl. OT &amp; shootout</option><option>Regulation only</option><option>Full time, 90 min + stoppage</option></select></span><span class="fld"><label for="rf-date">Reviewed on</label><input id="rf-date" class="ctl" type="date" data-fk="rf-date" value="${new Date().toISOString().slice(0, 10)}"></span></span>
       <span class="fld"><label for="rf-src">Source (house-rules URL or document)</label><input id="rf-src" class="ctl" type="text" data-fk="rf-src" placeholder="e.g. https://… house rules §4.2"></span><span class="keyrow" style="width:100%"><button class="btn sm primary" type="button" id="rf-save" data-fk="rf-save">Record verified rule</button><span id="rf-msg" class="msg" role="status"></span></span></span></span></div>`;
@@ -2705,7 +2707,7 @@ function init() {
   $('open-filters').onclick = e => showDialog('filters', e.currentTarget);
   $('sheet-reset').onclick = () => resetFilters();
   document.querySelectorAll('.tabs [data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
-  document.querySelector('.tabs').onkeydown = e => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return; const v = ['board', 'review', 'snapshot', 'results'], k = v.indexOf(S.view); setView(v[(k + (e.key === 'ArrowRight' ? 1 : 2)) % 3]); };
+  document.querySelector('.tabs').onkeydown = e => { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return; const v = ['board', 'snapshot', 'results'], k = Math.max(0, v.indexOf(S.view)); setView(v[(k + (e.key === 'ArrowRight' ? 1 : v.length - 1)) % v.length]); };
   // filters
   const on = (id, fn) => $(id).addEventListener('input', e => { fn(e.target.value); savePrefs(); render(); });
   on('f-sport', v => { S.f.sport = v; syncLeagues(); });
