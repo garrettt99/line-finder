@@ -2066,7 +2066,10 @@ async function checkResults(manual) {
   resMsg = fail ? `Couldn't get scores: ${fail}` : graded ? `Graded ${graded} bet${graded === 1 ? '' : 's'}.` : 'No new final scores yet. Games usually show up an hour or two after they end.';
   render();
 }
-const unitsStr = u => u == null ? '—' : (u > 0 ? '+' : u < 0 ? '−' : '') + Math.abs(u).toFixed(2) + 'u';
+const STAKE_KEY = 'lf-stake';
+const getStake = () => { const v = +store_get(STAKE_KEY); return Number.isFinite(v) && v > 0 ? v : 100; };
+const dollars = x => '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: Math.abs(x) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+const unitsStr = u => u == null ? '—' : (u > 0 ? '+' : u < 0 ? '−' : '') + dollars(u * getStake());
 const pctS = x => x == null ? '—' : (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(1) + '%';
 function renderResults() {
   const el = $('view-results'), now = Date.now();
@@ -2099,12 +2102,12 @@ function renderResults() {
       <td>${res(p)}${p.final ? `<span class="s">${esc(p.final)}</span>` : ''}</td>
       <td class="r ${tone(p.units)}">${unitsStr(p.units)}</td></tr>`).join('');
     h = `<div class="res">
-      <div class="res-top"><p class="snapnote" style="border:0;padding:0;margin:0;flex:1">Every positive-EV wager Line Finder found on live odds, graded against the final score at 1 unit per bet. Saved on this device only.</p>
-        <div class="keyrow"><button type="button" class="btn primary" id="res-check" ${resBusy ? 'disabled' : ''}>Check results now</button><button type="button" class="btn ghost" id="res-clear">Clear history</button></div></div>
+      <div class="res-top"><p class="snapnote" style="border:0;padding:0;margin:0;flex:1">Every positive-EV wager Line Finder found on live odds, graded against the final score as if you bet ${dollars(getStake())} on each one. Saved on this device only.</p>
+        <div class="keyrow"><label class="lab" for="res-stake" style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--fg-3)">Bet size</label><div class="evin" style="width:110px"><input id="res-stake" class="ctl" type="number" min="1" step="1" inputmode="decimal" value="${getStake()}" aria-label="Dollars per bet" style="padding-left:22px;padding-right:10px"><span style="left:10px;right:auto">$</span></div><button type="button" class="btn primary" id="res-check" ${resBusy ? 'disabled' : ''}>Check results now</button><button type="button" class="btn ghost" id="res-clear">Clear history</button></div></div>
       ${resMsg ? `<p class="hint" role="status" style="margin:0">${esc(resMsg)}</p>` : ''}
       <div class="rgrid">
         ${card('Record', s.n ? `${s.W}-${s.L}${s.P ? '-' + s.P : ''}` : '—', `${s.n} graded · ${pend.length} pending`)}
-        ${card('Profit', unitsStr(s.n ? s.units : null), s.n ? `ROI ${pctS(s.roi)}` : 'at 1 unit per bet', tone(s.n ? s.units : null))}
+        ${card('Profit', unitsStr(s.n ? s.units : null), s.n ? `ROI ${pctS(s.roi)} on ${dollars(s.n * getStake())} wagered` : `at ${dollars(getStake())} per bet`, tone(s.n ? s.units : null))}
         ${card('Expected profit', unitsStr(s.n ? s.exp : null), s.n ? `ROI ${pctS(s.expRoi)} from the EV estimates` : 'what the EV numbers predicted')}
         ${card('Win rate', s.winRate == null ? '—' : (s.winRate * 100).toFixed(1) + '%', s.expWinRate == null ? 'pushes excluded' : `expected ${(s.expWinRate * 100).toFixed(1)}%`)}
         ${card('Beat the closing line', s.clvBeat == null ? '—' : Math.round(s.clvBeat * 100) + '%', s.clvAvg == null ? '' : `avg ${pctS(s.clvAvg)} EV at the last price before start`, tone(s.clvAvg))}
@@ -2121,6 +2124,7 @@ function renderResults() {
   if (el.dataset.h !== h) {
     el.dataset.h = h; el.innerHTML = h; wireActs(el);
     const c = $('res-check'); if (c) c.onclick = () => checkResults(true);
+    const sk = $('res-stake'); if (sk) sk.onchange = e => { const v = +e.target.value; if (Number.isFinite(v) && v > 0) { store_set(STAKE_KEY, String(v)); render(); } else e.target.value = getStake(); };
     const x = $('res-clear'); if (x) x.onclick = () => { if (x.dataset.armed) { picks = []; savePicks(); resMsg = 'History cleared.'; render(); } else { x.dataset.armed = '1'; x.textContent = 'Tap again to clear'; } };
   }
 }
