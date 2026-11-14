@@ -760,7 +760,7 @@ div.ritem{cursor:default}
     </section>
     <section class="sec"><h3>How Line Finder works it out</h3>
       <ol class="steps">
-        <li><span><b>Find the real chance.</b> It looks at the same bet at the other sportsbooks and removes their built-in cut (the "vig"). What's left is a fair estimate of how often the bet wins. The book being rated is left out, so it never grades its own price.</span></li>
+        <li><span><b>Find the real chance.</b> It looks at the same bet at the other sportsbooks and removes their built-in cut (the "vig"). What's left is a fair estimate of how often the bet wins. Sharp books (Pinnacle, Circa and the exchanges) count triple because their prices track the real odds most closely. The book being rated is left out, so it never grades its own price.</span></li>
         <li><span><b>Compare it to the price on offer.</b> If a book pays more than that fair chance deserves, the bet has positive EV.</span></li>
       </ol></section>
     <section class="sec"><h3>Example</h3>
@@ -861,7 +861,7 @@ startApp(new MyFeedAdapter());</pre></section>
     </section>
     <section class="sec"><h3>Settlement rules</h3>
       <p class="hint">Quotes are compared across books only when each book's rule for that league, market and period is stated by the feed or recorded here with a source and review date. Rules are never guessed from market names. <span class="dep">The Odds API doesn't state them.</span></p>
-      <label class="chk" style="padding-left:0;margin:4px 0 10px"><input type="checkbox" id="std-rules" checked> <span><b>Use standard overtime rules for live odds</b> (recommended). Football and basketball include OT, MLB includes extra innings, UFC/MMA and boxing moneylines void on a draw or no contest, NHL moneylines and puck lines include OT and shootout, NHL totals count a shootout as 1 goal, soccer is 90 minutes plus stoppage. Labelled "assumed" in each wager. A rule you record for a specific book overrides it.</span></label>
+      <label class="chk" style="padding-left:0;margin:4px 0 10px"><input type="checkbox" id="std-rules" checked> <span><b>Use standard overtime rules for live odds</b> (recommended). Football and basketball include OT, MLB includes extra innings, UFC/MMA and boxing moneylines void on a draw or no contest, NHL moneylines and puck lines include OT and shootout, NHL totals count a shootout as 1 goal (a few European books that price NHL totals on regulation time are grouped separately), soccer is 90 minutes plus stoppage. Labelled "assumed" in each wager. A rule you record for a specific book overrides it.</span></label>
       <div id="rules-list"></div>
       <details class="dd-inline"><summary class="linkbtn">Add a verified rule</summary>
         <div class="form" style="margin-top:10px">
@@ -1545,11 +1545,14 @@ const STANDARD_RULES = (() => {
   for (const t of ['ml', 'spread', 'total']) set('MLB', t, 'Incl. extra innings');
   for (const lg of ['UFC/MMA', 'Boxing']) set(lg, 'ml', 'Official result, draw or no contest voids the bet');
   set('NHL', 'ml', 'Incl. OT and shootout'); set('NHL', 'spread', 'Incl. OT and shootout'); set('NHL', 'total', 'Incl. OT, shootout counts as 1 goal');
+  /* These books price NHL Overs 2 to 3 points below every other book on every game, which is what a regulation-time total
+     looks like. They are kept in their own group so they are not compared with totals that include overtime. */
+  for (const b of ['marathonbet', 'onexbet', 'coolbet', 'unibet_nl', 'tipico_de']) r[[b, 'NHL', 'total', 'Game'].join('|')] = { rule: 'Regulation time only', source: 'Assumed from pricing, confirm at the book', reviewed: 'Nov 2026' };
   for (const lg of ['EPL', 'UCL', 'MLS']) for (const t of ['ml3', 'spread', 'total']) set(lg, t, 'Full time, 90 min + stoppage');
   return r;
 })();
 const REGIONS = { us: 'US', us2: 'US 2', us_ex: 'US exchanges', uk: 'UK', eu: 'EU', au: 'AU' };
-const EXCHANGE_KEYS = new Set(['betfair_ex_uk', 'betfair_ex_eu', 'betfair_ex_au', 'matchbook', 'smarkets', 'betdaq', 'novig', 'prophetx', 'sporttrade', 'kalshi', 'polymarket']);
+const EXCHANGE_KEYS = new Set(['betfair_ex_uk', 'betfair_ex_eu', 'betfair_ex_au', 'matchbook', 'smarkets', 'betdaq', 'novig', 'prophetx', 'sporttrade', 'kalshi', 'polymarket', 'polymarket_us', 'betopenly', 'limitless']);
 /* Known sportsbook sites. A feed link counts as verified only if its host is one of these. */
 const BOOK_SITES = {
   draftkings: ['draftkings.com'], fanduel: ['fanduel.com'], betmgm: ['betmgm.com'], betrivers: ['betrivers.com'], williamhill_us: ['caesars.com', 'williamhill.com'],
@@ -1616,7 +1619,7 @@ class OddsApiAdapter {
       as: shortName(ev.away_team, info.league), hs: shortName(ev.home_team, info.league), start: Date.parse(ev.commence_time) };
     for (const b of ev.bookmakers || []) {
       if (!b || !b.key) continue;
-      if (!books[b.key]) books[b.key] = { id: b.key, name: b.title || b.key, region: rg, exchange: EXCHANGE_KEYS.has(b.key) };
+      if (!books[b.key]) books[b.key] = { id: b.key, name: b.title || b.key, region: rg, exchange: EXCHANGE_KEYS.has(b.key) || rg === 'us_ex' };
       for (const m of b.markets || []) {
         const o = this._mapMarket(m, b, ev, info);
         if (!o) continue;
