@@ -1515,7 +1515,7 @@ const STANDARD_RULES = (() => {
   for (const lg of ['EPL', 'UCL', 'MLS']) for (const t of ['ml3', 'spread', 'total']) set(lg, t, 'Full time, 90 min + stoppage');
   return r;
 })();
-const REGIONS = { us: 'US', us2: 'US 2', uk: 'UK', eu: 'EU', au: 'AU' };
+const REGIONS = { us: 'US', us2: 'US 2', us_ex: 'US exchanges', uk: 'UK', eu: 'EU', au: 'AU' };
 const EXCHANGE_KEYS = new Set(['betfair_ex_uk', 'betfair_ex_eu', 'betfair_ex_au', 'matchbook', 'smarkets', 'betdaq', 'novig', 'prophetx', 'sporttrade', 'kalshi', 'polymarket']);
 /* Known sportsbook sites. A feed link counts as verified only if its host is one of these. */
 const BOOK_SITES = {
