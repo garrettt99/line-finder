@@ -859,7 +859,7 @@ startApp(new MyFeedAdapter());</pre></section>
     </section>
     <section class="sec"><h3>Settlement rules</h3>
       <p class="hint">Quotes are compared across books only when each book's rule for that league, market and period is stated by the feed or recorded here with a source and review date. Rules are never guessed from market names. <span class="dep">The Odds API doesn't state them.</span></p>
-      <label class="chk" style="padding-left:0;margin:4px 0 10px"><input type="checkbox" id="std-rules" checked> <span><b>Use standard overtime rules for live odds</b> (recommended). Football and basketball include OT, NHL moneylines and puck lines include OT and shootout, NHL totals count a shootout as 1 goal, soccer is 90 minutes plus stoppage. Labelled "assumed" in each wager. A rule you record for a specific book overrides it.</span></label>
+      <label class="chk" style="padding-left:0;margin:4px 0 10px"><input type="checkbox" id="std-rules" checked> <span><b>Use standard overtime rules for live odds</b> (recommended). Football and basketball include OT, MLB includes extra innings, UFC/MMA and boxing moneylines void on a draw or no contest, NHL moneylines and puck lines include OT and shootout, NHL totals count a shootout as 1 goal, soccer is 90 minutes plus stoppage. Labelled "assumed" in each wager. A rule you record for a specific book overrides it.</span></label>
       <div id="rules-list"></div>
       <details class="dd-inline"><summary class="linkbtn">Add a verified rule</summary>
         <div class="form" style="margin-top:10px">
@@ -1489,17 +1489,30 @@ const LIVE_SPORTS = {
   americanfootball_ncaaf: { sport: 'Football', league: 'NCAAF' },
   basketball_nba: { sport: 'Basketball', league: 'NBA' },
   icehockey_nhl: { sport: 'Hockey', league: 'NHL' },
-  soccer_epl: { sport: 'Soccer', league: 'EPL' }
+  soccer_epl: { sport: 'Soccer', league: 'EPL' },
+  mma_mixed_martial_arts: { sport: 'MMA', league: 'UFC/MMA' },
+  boxing_boxing: { sport: 'Boxing', league: 'Boxing' },
+  basketball_ncaab: { sport: 'Basketball', league: 'NCAAB' },
+  baseball_mlb: { sport: 'Baseball', league: 'MLB' },
+  americanfootball_cfl: { sport: 'Football', league: 'CFL' },
+  basketball_wnba: { sport: 'Basketball', league: 'WNBA' },
+  soccer_uefa_champs_league: { sport: 'Soccer', league: 'UCL' },
+  soccer_usa_mls: { sport: 'Soccer', league: 'MLS' }
 };
+/* Fight sports have no home team, so matchups read "A vs B". */
+const COMBAT = new Set(['MMA', 'Boxing']);
+const sepFor = sport => COMBAT.has(sport) ? 'vs' : sport === 'Soccer' ? 'at' : '@';
 /* Standard settlement rules used by the major sportsbooks for these full-game markets.
    The Odds API doesn't state them, so they're applied as an assumption (labelled in the app)
    unless you record a book-specific rule. Keys: *|league|type|period. */
 const STD_SRC = 'Standard rule at major sportsbooks (assumed, confirm at the book)';
 const STANDARD_RULES = (() => {
   const r = {}, set = (lg, type, rule) => { r[['*', lg, type, 'Game'].join('|')] = { rule, source: STD_SRC }; };
-  for (const lg of ['NFL', 'NCAAF', 'NBA']) for (const t of ['ml', 'spread', 'total']) set(lg, t, 'Incl. OT');
+  for (const lg of ['NFL', 'NCAAF', 'CFL', 'NBA', 'NCAAB', 'WNBA']) for (const t of ['ml', 'spread', 'total']) set(lg, t, 'Incl. OT');
+  for (const t of ['ml', 'spread', 'total']) set('MLB', t, 'Incl. extra innings');
+  for (const lg of ['UFC/MMA', 'Boxing']) set(lg, 'ml', 'Official result, draw or no contest voids the bet');
   set('NHL', 'ml', 'Incl. OT and shootout'); set('NHL', 'spread', 'Incl. OT and shootout'); set('NHL', 'total', 'Incl. OT, shootout counts as 1 goal');
-  for (const t of ['ml3', 'spread', 'total']) set('EPL', t, 'Full time, 90 min + stoppage');
+  for (const lg of ['EPL', 'UCL', 'MLS']) for (const t of ['ml3', 'spread', 'total']) set(lg, t, 'Full time, 90 min + stoppage');
   return r;
 })();
 const REGIONS = { us: 'US', us2: 'US 2', uk: 'UK', eu: 'EU', au: 'AU' };
@@ -1510,9 +1523,11 @@ const BOOK_SITES = {
   espnbet: ['espnbet.com'], fanatics: ['fanatics.com'], pinnacle: ['pinnacle.com'], bovada: ['bovada.lv'], betonlineag: ['betonline.ag'], mybookieag: ['mybookie.ag'], lowvig: ['lowvig.ag'],
   betfair_ex_uk: ['betfair.com'], betfair_ex_eu: ['betfair.com'], betfair_ex_au: ['betfair.com.au'], betfair_sb_uk: ['betfair.com'], unibet_eu: ['unibet.com'], unibet_uk: ['unibet.co.uk'], matchbook: ['matchbook.com'], smarkets: ['smarkets.com']
 };
-const TWO_WORD = ['Maple Leafs', 'Red Wings', 'Blue Jackets', 'Golden Knights', 'Trail Blazers'];
+const TWO_WORD = ['Maple Leafs', 'Red Wings', 'Blue Jackets', 'Golden Knights', 'Trail Blazers', 'Red Sox', 'White Sox', 'Blue Jays'];
+/* Pro team names shorten to the nickname; college, soccer and fighter names stay in full. */
+const SHORT_LEAGUES = new Set(['NFL', 'NBA', 'NHL', 'MLB', 'CFL', 'WNBA']);
 const shortName = (full, league) => {
-  if (!full || league === 'NCAAF' || league === 'EPL' || full === 'Draw') return full;
+  if (!full || !SHORT_LEAGUES.has(league) || full === 'Draw') return full;
   const t = TWO_WORD.find(x => full.endsWith(' ' + x)); return t || full.split(' ').pop();
 };
 
@@ -1674,7 +1689,7 @@ const clock = t => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', mi
 const hm = t => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 const startStr = t => new Date(t).toLocaleString('en-CA', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 const inStr = t => { const h = (t - nowT()) / HOUR; return h <= 0 ? 'started' : h < 24 ? `in ${Math.floor(h)}h ${String(Math.floor(h % 1 * 60)).padStart(2, '0')}m` : `in ${Math.round(h / 24)}d`; };
-const vs = e => `${e.as} ${e.sport === 'Soccer' ? 'at' : '@'} ${e.hs}`;
+const vs = e => `${e.as} ${sepFor(e.sport)} ${e.hs}`;
 const bookName = id => books[id] ? books[id].name : id;
 const isEx = id => !!(books[id] && books[id].exchange);
 const srcName = s => s === 'demo' ? 'Simulated feed' : s === 'oddsapi' ? 'The Odds API' : (s || 'Feed');
@@ -2097,7 +2112,7 @@ function renderResults() {
     const res = p => p.result === 'win' ? '<span class="badge rw">Won</span>' : p.result === 'loss' ? '<span class="badge rl">Lost</span>' : p.result === 'push' ? '<span class="badge ok">Push</span>'
       : p.result === 'no-score' ? '<span class="badge ok">No score</span>' : p.start > now ? '<span class="badge ok">Upcoming</span>' : '<span class="badge warn">Awaiting score</span>';
     const list = picks.slice().sort((a, b) => b.start - a.start).slice(0, 300).map(p => `<tr>
-      <td><b style="font-weight:600">${esc(p.label)}</b><span class="s">${esc(p.league)} · ${esc(p.as)} ${p.sport === 'Soccer' ? 'at' : '@'} ${esc(p.hs)} · ${startStr(p.start)}</span></td>
+      <td><b style="font-weight:600">${esc(p.label)}</b><span class="s">${esc(p.league)} · ${esc(p.as)} ${sepFor(p.sport)} ${esc(p.hs)} · ${startStr(p.start)}</span></td>
       <td>${esc(p.bookName || p.book)}<span class="s">${fmtOdds(p.posted)}</span></td>
       <td class="r ${tone(p.ev)}">${pctS(p.ev)}</td>
       <td class="r ${tone(p.clv)}">${p.clv == null ? '—' : pctS(p.clv)}</td>
@@ -2319,7 +2334,7 @@ function renderPanel() {
   const rank = row ? row.pick : null, bestP = row ? row.priceOffer : null;
   if (!all.some(o => o.book === S.selBook)) S.selBook = (rank || all[0]).book;
   const sel = all.find(o => o.book === S.selBook), so = sel.o, bk = bookName(sel.book);
-  const head = `<div class="dp-head">${narrow ? `<button class="iconbtn" type="button" data-close data-fk="close" aria-label="Back to odds board">${I.back}<span>Board</span></button>` : ''}<span class="eyebrow"><span class="lg">${e.league}</span> ${esc(e.away)} ${e.sport === 'Soccer' ? 'at' : '@'} ${esc(e.home)} · ${startStr(e.start)}</span>${narrow ? '' : '<button class="iconbtn" type="button" data-close data-fk="close" aria-label="Close wager details">✕</button>'}</div>`;
+  const head = `<div class="dp-head">${narrow ? `<button class="iconbtn" type="button" data-close data-fk="close" aria-label="Back to odds board">${I.back}<span>Board</span></button>` : ''}<span class="eyebrow"><span class="lg">${e.league}</span> ${esc(e.away)} ${sepFor(e.sport)} ${esc(e.home)} · ${startStr(e.start)}</span>${narrow ? '' : '<button class="iconbtn" type="button" data-close data-fk="close" aria-label="Close wager details">✕</button>'}</div>`;
   const title = `<div class="dp-title"><div class="meta">${demo ? '<span class="srctag sim">Simulated feed</span>' : '<span class="srctag live">Live · The Odds API</span>'}${S.paused ? '<span class="srctag paused">❚❚ Paused</span>' : ''}</div><h2 id="panel-title">${esc(m.outcomes[i])}</h2><p>${typeName(m, e.league)} · Full game · ${m.settlement ? esc(m.settlement) : 'Settlement rules unverified'} · ${inStr(e.start)}</p></div>`;
   const chg = changes(ctx, now, row);
   const chgHTML = chg.length ? `<div class="callout ${chg.some(x => x.cls === 'bad') ? 'bad' : chg.some(x => x.cls === 'warn') ? 'warn' : 'chg'}">${I.chg}<span><b style="display:block;margin-bottom:2px">Since you opened this wager</b>${chg.map(x => `<span style="display:block">${x.t}</span>`).join('')}</span><span class="acts"><button class="btn sm" type="button" data-fk="ack" id="ack">Mark as seen</button></span></div>` : '';
