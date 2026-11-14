@@ -1053,12 +1053,20 @@ const Core = (() => {
   function devig(imp, how) {
     const s = sum(imp), prop = imp.map(x => x / s);
     if (how !== 'shin' || !(s > 1 + 1e-9) || imp.some(x => !(x > 0 && x < 1))) return prop;
+    if (imp.length === 2) { const d = (s - 1) / 2, a = imp[0] - d, b = imp[1] - d; return a > 0 && b > 0 ? [a, b] : prop; } /* Shin's two-outcome solution is exact */
     const at = z => imp.map(x => (Math.sqrt(z * z + 4 * (1 - z) * x * x / s) - z) / (2 * (1 - z)));
     let lo = 0, hi = 0.5;
     if (sum(at(hi)) > 1) return prop;
     for (let n = 0; n < 60; n++) { const mid = (lo + hi) / 2; if (sum(at(mid)) > 1) lo = mid; else hi = mid; }
     const out = at((lo + hi) / 2), t = sum(out);
     return out.every(x => x > 0) ? out.map(x => x / t) : prop;
+  }
+  /* Each quote's no-vig probabilities are worked out once and reused until its prices change. */
+  const NV = new WeakMap();
+  function nvOf(q, imp, how) {
+    const key = (how || 'prop') + '|' + q.prices.join(','), c = NV.get(q);
+    if (c && c.key === key) return c.nv;
+    const nv = devig(imp, how); NV.set(q, { key, nv }); return nv;
   }
   /* No-vig fair probabilities from complete, fresh, open, verified, non-outlier references, excluding the candidate's book. */
   function fair(m, excludeBook, cfg, now, outl) {
@@ -1083,7 +1091,7 @@ const Core = (() => {
       }
     }
     const need = method === 'single' ? 1 : cfg.minRef;
-    const refs = elig.map(q => { const imp = q.prices.map(a => 1 / a2d(a)), s = sum(imp); return { book: q.book, src: q.src, prices: q.prices, updated: q.updated, seenAt: q.seenAt, imp, over: s, nv: devig(imp, cfg.devig), w: cfg.weight ? Math.max(0, +cfg.weight(q.book) || 0) || 1 : 1 }; });
+    const refs = elig.map(q => { const imp = q.prices.map(a => 1 / a2d(a)), s = sum(imp); return { book: q.book, src: q.src, prices: q.prices, updated: q.updated, seenAt: q.seenAt, imp, over: s, nv: nvOf(q, imp, cfg.devig), w: cfg.weight ? Math.max(0, +cfg.weight(q.book) || 0) || 1 : 1 }; });
     if (refs.length < need) return { ok: false, refs, excluded, method, note, need, reason: `Only ${refs.length} eligible reference book${refs.length === 1 ? '' : 's'} for this exact line after excluding the offering book (minimum ${need}).` };
     const W = sum(refs.map(r => r.w));
     const p = m.outcomes.map((_, i) => sum(refs.map(r => r.nv[i] * r.w)) / W);
