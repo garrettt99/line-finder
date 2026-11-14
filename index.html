@@ -1647,7 +1647,7 @@ const S = {
   m: { method: 'consensus', refBook: null, minRef: 2, staleMin: 15, pushEst: true },
   review: { ...Core.DEFAULT_REVIEW, auto: true, capEdge: 20 },
   ex: {}, userRules: {},
-  src: { mode: 'demo', regions: ['us', 'eu'], sports: ['americanfootball_nfl', 'basketball_nba', 'icehockey_nhl'], autoMin: 0, remember: true, minGapSec: 60, stdRules: true }
+  src: { mode: 'demo', regV: 2, regions: ['us', 'us2', 'us_ex', 'eu'], sports: ['americanfootball_nfl', 'basketball_nba', 'icehockey_nhl'], autoMin: 0, remember: true, minGapSec: 60, stdRules: true }
 };
 const SORTS = ['ev', 'start', 'best', 'offer', 'fairOdds', 'age', 'match', 'book'];
 const DESC_FIRST = ['ev', 'best', 'offer', 'fairOdds'];
@@ -1665,6 +1665,8 @@ function loadPrefs() {
       if (p.ex && typeof p.ex === 'object') S.ex = p.ex;
       if (p.src) { Object.assign(S.src, p.src); S.src.regions = S.src.regions.filter(r => REGIONS[r]); S.src.sports = S.src.sports.filter(s => LIVE_SPORTS[s]); }
       if (Array.isArray(p.books)) S.f.booksPref = p.books;
+      /* One-time upgrade: switch on every US book region (and show their books) for settings saved before they were the default. */
+      if (p.src && !(p.src.regV >= 2)) { for (const r of ['us', 'us2', 'us_ex']) if (!S.src.regions.includes(r)) S.src.regions.push(r); S.src.regV = 2; S.f.booksPref = null; }
     }
   } catch (e) { }
   try { const r = JSON.parse(store_get(RULES_KEY) || 'null'); if (r && typeof r === 'object') S.userRules = r; } catch (e) { }
