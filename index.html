@@ -835,9 +835,11 @@ startApp(new MyFeedAdapter());</pre></section>
         <div class="form-grid">
           <div class="fld"><label for="m-method">Reference</label><select id="m-method" class="ctl"><option value="consensus">Consensus of eligible books</option><option value="single">Single reference book</option></select></div>
           <div class="fld"><label for="m-ref">Reference book</label><select id="m-ref" class="ctl" disabled></select></div>
-          <div class="fld"><label for="m-min">Min reference books</label><select id="m-min" class="ctl"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option></select></div>
+          <div class="fld"><label for="m-min">Min reference books</label><select id="m-min" class="ctl"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select></div>
           <div class="fld"><label for="m-stale">Stale cutoff</label><select id="m-stale" class="ctl"><option value="5">5 min</option><option value="10">10 min</option><option value="15" selected>15 min</option><option value="30">30 min</option><option value="60">60 min</option></select></div>
         </div>
+        <div class="form-grid"><div class="fld"><label for="m-devig">Vig removal</label><select id="m-devig" class="ctl"><option value="shin">Shin method (more accurate on longshots)</option><option value="prop">Simple scaling</option></select></div></div>
+        <label class="chk" style="padding-left:0"><input type="checkbox" id="m-sharp"> Count sharp books triple (Pinnacle, Circa and the exchanges). Their prices track the true odds most closely.</label>
         <label class="chk" style="padding-left:0"><input type="checkbox" id="m-push"> Use demo push estimates for whole-number NFL and NCAAF lines</label>
       </div>
     </section>
@@ -1046,6 +1048,18 @@ const Core = (() => {
     }
     return out;
   }
+  /* Vig removal. 'shin' uses Shin's model, which assumes books pad longshot prices more than favourites
+     (favourite-longshot bias), so it takes more of the vig out of longshots than plain scaling does. */
+  function devig(imp, how) {
+    const s = sum(imp), prop = imp.map(x => x / s);
+    if (how !== 'shin' || !(s > 1 + 1e-9) || imp.some(x => !(x > 0 && x < 1))) return prop;
+    const at = z => imp.map(x => (Math.sqrt(z * z + 4 * (1 - z) * x * x / s) - z) / (2 * (1 - z)));
+    let lo = 0, hi = 0.5;
+    if (sum(at(hi)) > 1) return prop;
+    for (let n = 0; n < 60; n++) { const mid = (lo + hi) / 2; if (sum(at(mid)) > 1) lo = mid; else hi = mid; }
+    const out = at((lo + hi) / 2), t = sum(out);
+    return out.every(x => x > 0) ? out.map(x => x / t) : prop;
+  }
   /* No-vig fair probabilities from complete, fresh, open, verified, non-outlier references, excluding the candidate's book. */
   function fair(m, excludeBook, cfg, now, outl) {
     const staleMs = cfg.staleMin * MIN, excluded = []; let elig = [];
@@ -1069,10 +1083,11 @@ const Core = (() => {
       }
     }
     const need = method === 'single' ? 1 : cfg.minRef;
-    const refs = elig.map(q => { const imp = q.prices.map(a => 1 / a2d(a)), s = sum(imp); return { book: q.book, src: q.src, prices: q.prices, updated: q.updated, seenAt: q.seenAt, imp, over: s, nv: imp.map(x => x / s) }; });
+    const refs = elig.map(q => { const imp = q.prices.map(a => 1 / a2d(a)), s = sum(imp); return { book: q.book, src: q.src, prices: q.prices, updated: q.updated, seenAt: q.seenAt, imp, over: s, nv: devig(imp, cfg.devig), w: cfg.weight ? Math.max(0, +cfg.weight(q.book) || 0) || 1 : 1 }; });
     if (refs.length < need) return { ok: false, refs, excluded, method, note, need, reason: `Only ${refs.length} eligible reference book${refs.length === 1 ? '' : 's'} for this exact line after excluding the offering book (minimum ${need}).` };
-    const p = m.outcomes.map((_, i) => sum(refs.map(r => r.nv[i])) / refs.length);
-    return { ok: true, p, refs, excluded, method, note, need };
+    const W = sum(refs.map(r => r.w));
+    const p = m.outcomes.map((_, i) => sum(refs.map(r => r.nv[i] * r.w)) / W);
+    return { ok: true, p, refs, excluded, method, note, need, weighted: refs.some(r => r.w !== 1), devig: cfg.devig === 'shin' ? 'shin' : 'prop' };
   }
 
   /* status: ok | conditional (push probability unknown) | no-fair | commission-unknown | unverified */
@@ -1214,7 +1229,7 @@ const Core = (() => {
       winRate: dec.length ? W / dec.length : null, expWinRate: dec.length ? expWins / dec.length : null,
       clvN: clv.length, clvBeat: clv.length ? clv.filter(p => p.clv > 0).length / clv.length : null, clvAvg: clv.length ? sum(clv.map(p => p.clv)) / clv.length : null };
   }
-  return { MIN, HOUR, DEFAULT_REVIEW, setAgeBySeen, ageT, gradePick, summarize, a2d, d2a, roundA, sum, median, validate, baseKey, quoteKey, ruleKey, createStore, ingest, resolveSettlement, groupMarkets, quoteState, isComplete, isPushable, evFromProbs, effective, postedForEffective, outliers, fair, evaluate, evAtPrice, minOddsFor, analyze, buildRows, sortRows, verifiedLink, demoPushModel };
+  return { MIN, HOUR, DEFAULT_REVIEW, devig, setAgeBySeen, ageT, gradePick, summarize, a2d, d2a, roundA, sum, median, validate, baseKey, quoteKey, ruleKey, createStore, ingest, resolveSettlement, groupMarkets, quoteState, isComplete, isPushable, evFromProbs, effective, postedForEffective, outliers, fair, evaluate, evAtPrice, minOddsFor, analyze, buildRows, sortRows, verifiedLink, demoPushModel };
 })();
 
 /* ===== Deterministic checks (fixtures, fixed clock). ===== */
@@ -1238,6 +1253,16 @@ function runChecks(C) {
   const check = (name, fn) => { try { const d = fn(); out.push({ name, pass: d === true || (d && d.pass), detail: d && d.detail || '' }); } catch (e) { out.push({ name, pass: false, detail: String(e) }); } };
 
   check('55% fair win probability at +100 gives +10% EV', () => { const ev = C.evFromProbs(.55, .45, C.a2d(100)); return { pass: near(ev, 10), detail: `EV = ${ev.toFixed(4)}%` }; });
+  check('Shin vig removal sums to 100% and trims longshots more than plain scaling', () => {
+    const imp = [1 / C.a2d(-2000), 1 / C.a2d(900)], pw = C.devig(imp, 'shin'), pr = C.devig(imp, 'prop');
+    const i3 = [1 / 1.5, 1 / 4.2, 1 / 7], p3 = C.devig(i3, 'shin'), even = C.devig([1 / C.a2d(-110), 1 / C.a2d(-110)], 'shin');
+    return { pass: near(pw[0] + pw[1], 1) && pw[1] < pr[1] && near(pw[1], imp[1] - (imp[0] + imp[1] - 1) / 2, 1e-6) && near(p3[0] + p3[1] + p3[2], 1) && near(even[0], .5), detail: `+900 longshot ${(pr[1] * 100).toFixed(2)}% scaled, ${(pw[1] * 100).toFixed(2)}% Shin` };
+  });
+  check('Sharp-book weighting pulls the consensus toward the sharp book', () => {
+    const s = load([ml('A', 'f3', [-110, -110]), ml('B', 'f3', [-110, -110]), ml('C', 'f3', [-125, 105]), ml('D', 'f3', [-120, 100])]), m = s.mk[0];
+    const flat = C.fair(m, 'D', cfg, NOW), w = C.fair(m, 'D', { ...cfg, weight: b => b === 'C' ? 3 : 1 }, NOW);
+    return { pass: flat.ok && w.ok && w.p[0] > flat.p[0] && near(w.p[0] + w.p[1], 1) && w.weighted && !flat.weighted, detail: `flat ${(flat.p[0] * 100).toFixed(2)}%, weighted ${(w.p[0] * 100).toFixed(2)}%` };
+  });
   check('Best price across books can still have negative EV', () => {
     const s = load([ml('A', 'f3', [-155, 125]), ml('B', 'f3', [-158, 140]), ml('C', 'f3', [-162, 135]), ml('D', 'f3', [-165, 138]), ml('E', 'f3', [-170, 140])]);
     const r = rowsOf(s).rows.find(x => x.i === 0), b = r.priceOffer;
@@ -1644,7 +1669,7 @@ const S = {
   fmt: 'us', sort: { key: 'ev', dir: -1 }, view: 'board', sel: null, selBook: null, snap: null, lastFocus: null, dialog: null, returnFocus: null,
   paused: false, pausedAt: null, entered: {},
   f: { sport: 'all', league: 'all', market: 'all', starts: 'all', minEv: '', age: 'fresh', books: null, booksPref: null },
-  m: { method: 'consensus', refBook: null, minRef: 2, staleMin: 15, pushEst: true },
+  m: { method: 'consensus', refBook: null, minRef: 3, minRefV: 2, staleMin: 15, pushEst: true, devig: 'shin', sharp: true },
   review: { ...Core.DEFAULT_REVIEW, auto: true, capEdge: 20 },
   ex: {}, userRules: {},
   src: { mode: 'demo', regV: 2, regions: ['us', 'us2', 'us_ex', 'eu'], sports: ['americanfootball_nfl', 'basketball_nba', 'icehockey_nhl'], autoMin: 0, remember: true, minGapSec: 60, stdRules: true }
@@ -1660,7 +1685,7 @@ function loadPrefs() {
     const p = JSON.parse(store_get(PREF_KEY) || 'null');
     if (p) {
       if (p.sort && SORTS.includes(p.sort.key)) S.sort = { key: p.sort.key, dir: p.sort.dir === 1 ? 1 : -1 };
-      if (p.m) Object.assign(S.m, p.m);
+      if (p.m) { Object.assign(S.m, p.m); if (!(p.m.minRefV >= 2)) { S.m.minRef = Math.max(3, +S.m.minRef || 0); S.m.minRefV = 2; } }
       if (p.review) Object.assign(S.review, p.review);
       if (p.ex && typeof p.ex === 'object') S.ex = p.ex;
       if (p.src) { Object.assign(S.src, p.src); S.src.regions = S.src.regions.filter(r => REGIONS[r]); S.src.sports = S.src.sports.filter(s => LIVE_SPORTS[s]); }
@@ -1678,7 +1703,10 @@ function savePrefs() {
 const allRules = () => ({ ...(adapter && adapter.live && S.src.stdRules ? STANDARD_RULES : {}), ...(adapter && adapter.rules || {}), ...S.userRules });
 const feedExpired = () => !feed.lastOk || nowT() - feed.lastOk > S.m.staleMin * MIN;
 const exCfg = () => { const o = {}; for (const [k, v] of Object.entries(S.ex)) o[k] = { rate: v.rate === '' || v.rate == null ? null : +v.rate / 100, basis: v.basis || 'unknown' }; return o; };
-const cfg = () => ({ ...S.m, pushModel: S.m.pushEst ? Core.demoPushModel : null, review: S.review, verified: AV, feedExpired: feedExpired(), isExchange: id => !!(books[id] && books[id].exchange), exchanges: exCfg() });
+/* Books whose prices track the true odds most closely: low-margin, high-limit books and exchanges. They count triple in the consensus. */
+const SHARP_BOOKS = new Set(['pinnacle', 'circasports', 'betfair_ex_uk', 'betfair_ex_eu', 'betfair_ex_au', 'matchbook', 'smarkets', 'novig', 'prophetx', 'sporttrade']);
+const SHARP_W = 3;
+const cfg = () => ({ ...S.m, weight: S.m.sharp ? (id => SHARP_BOOKS.has(id) ? SHARP_W : 1) : null, pushModel: S.m.pushEst ? Core.demoPushModel : null, review: S.review, verified: AV, feedExpired: feedExpired(), isExchange: id => !!(books[id] && books[id].exchange), exchanges: exCfg() });
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pct = x => (x * 100).toFixed(1) + '%';
 const sgnPct = x => (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(1) + '%';
@@ -2385,8 +2413,8 @@ function renderPanel() {
   let detail = '';
   if (so && (so.r.status === 'ok' || so.r.status === 'conditional' || so.r.status === 'commission-unknown' || so.r.status === 'no-fair')) {
     const r = so.r, f = r.fair, need = f.need || (f.method === 'single' ? 1 : S.m.minRef);
-    const refRows = f.refs.map(x => `<tr><td><b style="font-weight:600">${esc(bookName(x.book))}</b><span class="s">${srcName(x.src)}</span></td>${x.prices.map(a => `<td class="r num">${fmtA(a)}</td>`).join('')}<td class="r num">${pct(x.over - 1)}</td><td class="r num" style="font-weight:700">${pct(x.nv[i])}</td><td class="r num">${x.updated != null ? clock(x.updated) : '—'}<span class="s">${x.updated != null ? ageStr(now - x.updated) + ' ago' : ''}</span></td></tr>`).join('');
-    const consRow = f.ok ? `<tr class="total"><td>${f.method === 'single' ? 'Reference' : `Mean of ${f.refs.length}`}</td>${f.p.map(v => `<td class="r num">${pct(v)}</td>`).join('')}<td></td><td class="r num">${pct(f.p[i])}</td><td></td></tr>` : '';
+    const refRows = f.refs.map(x => `<tr><td><b style="font-weight:600">${esc(bookName(x.book))}</b><span class="s">${srcName(x.src)}${x.w > 1 ? ` · sharp, counts ×${x.w}` : ''}</span></td>${x.prices.map(a => `<td class="r num">${fmtA(a)}</td>`).join('')}<td class="r num">${pct(x.over - 1)}</td><td class="r num" style="font-weight:700">${pct(x.nv[i])}</td><td class="r num">${x.updated != null ? clock(x.updated) : '—'}<span class="s">${x.updated != null ? ageStr(now - x.updated) + ' ago' : ''}</span></td></tr>`).join('');
+    const consRow = f.ok ? `<tr class="total"><td>${f.method === 'single' ? 'Reference' : `${f.weighted ? 'Weighted mean' : 'Mean'} of ${f.refs.length}`}</td>${f.p.map(v => `<td class="r num">${pct(v)}</td>`).join('')}<td></td><td class="r num">${pct(f.p[i])}</td><td></td></tr>` : '';
     const refTable = f.refs.length ? `<div class="tbl"><table><thead><tr><th>Reference</th>${m.outcomes.map(o => `<th class="r">${esc(o)}</th>`).join('')}<th class="r">Vig</th><th class="r">No-vig</th><th class="r">Provider time</th></tr></thead><tbody>${refRows}${consRow}</tbody></table></div>` : '<div class="callout">No book qualified as a reference for this exact wager.</div>';
     const excl = f.excluded.length ? `<p class="hint">Not used as references:</p><ul class="excl">${f.excluded.map(x => `<li>${esc(bookName(x.book))}: ${esc(x.why)}</li>`).join('')}</ul>` : '';
     let calc;
@@ -2398,7 +2426,7 @@ function renderPanel() {
         <div class="work">${lines.map(([a, b]) => `<span>${a}</span><span class="r">${b}</span>`).join('')}<span class="tot">Expected profit per $100</span><span class="r tot" style="color:var(${r.ev > 0 ? '--mint' : '--red'})">${money(r.ev)}</span></div>
         <p class="prose">Estimated EV ${sgnPct(r.ev)} per unit staked. Break-even odds ${fmtOdds(Core.minOddsFor(r, 0, so.book, c))}${r.ex.isEx ? ' (posted)' : ''}.${r.pp ? ` Push rate ${pct(r.pp)} is a demo estimate for ${e.league}, not feed data.` : ''}</p>`;
     } else calc = `<div class="callout"><span><b>${r.status === 'commission-unknown' ? 'Net EV withheld.' : r.status === 'conditional' ? 'Per-unit EV withheld.' : 'EV unavailable.'}</b> ${esc(r.reason)}</span></div>`;
-    detail = `<section class="sec"><h3>Reference inputs · ${esc(bk)} offer</h3><p class="hint">${f.method === 'single' ? 'Single reference book' : 'Consensus'}: each reference's complete market is converted to implied probabilities and scaled to 100% to remove its vig, then averaged. ${esc(bk)} is left out because it offers this price. ${f.refs.length} of ${need} needed qualified.${f.note ? ' ' + esc(f.note) : ''}</p>${refTable}${excl}</section>
+    detail = `<section class="sec"><h3>Reference inputs · ${esc(bk)} offer</h3><p class="hint">${f.method === 'single' ? 'Single reference book' : 'Consensus'}: each reference's complete market is converted to implied probabilities, has its vig removed (${f.devig === 'shin' ? 'Shin method, which trims longshots more' : 'scaled to 100%'}), then averaged${f.weighted ? ' with sharp books counted triple' : ''}. ${esc(bk)} is left out because it offers this price. ${f.refs.length} of ${need} needed qualified.${f.note ? ' ' + esc(f.note) : ''}</p>${refTable}${excl}</section>
       <section class="sec"><h3>Calculation per $100</h3>${calc}</section>`;
   }
   const chart = historyChart(m, i, now, sel.book, e);
@@ -2744,6 +2772,8 @@ function init() {
   onm('m-ref', v => S.m.refBook = v); onm('m-min', v => S.m.minRef = +v); onm('m-stale', v => S.m.staleMin = +v);
   $('m-push').onchange = e => { S.m.pushEst = e.target.checked; savePrefs(); render(); };
   $('m-method').value = S.m.method; $('m-min').value = String(S.m.minRef);
+  $('m-devig').value = S.m.devig === 'prop' ? 'prop' : 'shin'; onm('m-devig', v => S.m.devig = v);
+  $('m-sharp').checked = !!S.m.sharp; $('m-sharp').addEventListener('change', e => { S.m.sharp = e.target.checked; savePrefs(); render(); });
   if (![...$('m-stale').options].some(o => o.value === String(S.m.staleMin))) S.m.staleMin = 15;
   $('m-stale').value = String(S.m.staleMin); $('m-push').checked = S.m.pushEst;
   $('m-ref').disabled = S.m.method !== 'single'; $('m-min').disabled = S.m.method === 'single';
